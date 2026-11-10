@@ -36,8 +36,10 @@ const PX_PER_METRE: int = 32
 # --------------------------------------------------------------------------
 
 signal hp_changed(hp: int, max_hp: int)
+@warning_ignore("unused_signal")
 signal died
 signal took_damage(amount: int)
+@warning_ignore("unused_signal")
 signal fired_shot(from: Vector2, direction: Vector2)
 ## Emitted whenever facing changes to a new one of the 8 directions. The HUD
 ## does not need it, but it is the hook for footstep audio and dust later.

@@ -28,11 +28,12 @@ texture_region_size = Vector2i(64, 64)
 
 [sub_resource type="TileSetAtlasSource" id="A_wall"]
 texture = ExtResource("t_wall")
-texture_region_size = Vector2i(64, 128)
+texture_region_size = Vector2i(64, 64)
 0:0/0 = 0
-0:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-32, 0, 32, 0, 32, 64, -32, 64)
+0:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-32, -32, 32, -32, 32, 32, -32, 32)
 
 [resource]
+tile_size = Vector2i(64, 64)
 physics_layer_0/collision_layer = 32
 sources/0 = SubResource("A_floor_0")
 sources/1 = SubResource("A_floor_1")

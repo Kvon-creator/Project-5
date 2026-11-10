@@ -117,15 +117,26 @@ def build_wall():
                             shadow_mix=0.0, highlight_mix=0.16)
 
     parts = []
-    h = TILE_M * 0.95
+    # Wall height is capped by the frame, not by taste.
+    #
+    # A block of width w and height h seen at 45 deg paints a vertical extent
+    # of about (w + h) * cos(45) = 0.707 * (w + h). The wall has to fit a
+    # 64 px frame that covers TILE_M metres, and its width is already TILE_M,
+    # so:  0.707 * (TILE_M + h) <= TILE_M  ->  h <= 0.41 * TILE_M.
+    #
+    # 0.37 * TILE_M leaves a little headroom for the ink outline. Going
+    # taller makes the wall ONE TILE WIDE BUT TWO TILES TALL in the atlas,
+    # which needs a multi-cell tile declaration and makes every wall occupy
+    # two map cells - much more complexity than a chunky wall is worth.
+    h = TILE_M * 0.37
     parts.append(rig.add_box("Block", (0.0, 0.0, h * 0.5),
                              (TILE_M, TILE_M, h), stone))
     # A lighter cap so the top surface separates from the front face.
-    parts.append(rig.add_box("Cap", (0.0, 0.0, h + 0.03),
-                             (TILE_M, TILE_M, 0.06), cap))
+    parts.append(rig.add_box("Cap", (0.0, 0.0, h + 0.015),
+                             (TILE_M, TILE_M, 0.03), cap))
     # A recessed course line across the front, for scale.
-    parts.append(rig.add_box("Course", (0.0, -TILE_M * 0.5 + 0.02, h * 0.45),
-                             (TILE_M * 0.98, 0.05, 0.07), dark))
+    parts.append(rig.add_box("Course", (0.0, -TILE_M * 0.5 + 0.02, h * 0.42),
+                             (TILE_M * 0.98, 0.04, 0.05), dark))
     return parts
 
 
@@ -198,9 +209,10 @@ def main():
                 # about, and bullets have to win against it.
                 line_px=0.8)
 
-    # Walls and doors: the standard 3/4 rig, in taller frames so the block's
-    # height is not cropped.
-    _render("wall", build_wall, TILE_PX * 2, TILE_M * 2.0, line_px=1.4)
+    # Wall: exactly ONE tile, 64 px covering TILE_M metres, so it drops into
+    # the tilemap as a single cell. build_wall() keeps the block short enough
+    # to fit this frame - see the height note there.
+    _render("wall", build_wall, TILE_PX, TILE_M, line_px=1.2)
     _render("door_locked", lambda: build_door(False),
             TILE_PX * 3, TILE_M * 3.0, line_px=1.4)
     _render("door_open", lambda: build_door(True),

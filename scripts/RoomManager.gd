@@ -63,9 +63,12 @@ const OBJECTS_PER_ROOM_MAX: int = 3
 # --------------------------------------------------------------------------
 
 signal room_started(room_index: int)
+@warning_ignore("unused_signal")
 signal wave_started(wave_index: int, wave_count: int)
+@warning_ignore("unused_signal")
 signal wave_cleared(wave_index: int)
 ## Every enemy in every wave is down. GameManager listens and advances.
+@warning_ignore("unused_signal")
 signal room_cleared(room_index: int)
 signal doors_unlocked
 

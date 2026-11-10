@@ -56,6 +56,37 @@ def rel(*parts):
     return "res://" + "/".join(parts)
 
 
+def encode_tile_map_data(cells):
+    """
+    Encode cells into the PackedByteArray that TileMapLayer.tile_map_data
+    expects.
+
+    This is NOT a PackedInt32Array. Getting that wrong is silent in the
+    scene file and loud at runtime:
+
+        set_tile_map_data_from_array: Unsupported tile map data format: 257
+
+    The real layout, from Godot's TileMapLayer::set_tile_map_data_from_array:
+
+        bytes 0-1     uint16 format version, currently 0
+        then, 12 bytes per cell, little-endian:
+          0-1   int16   cell x
+          2-3   int16   cell y
+          4-5   uint16  source id   (which TileSet source)
+          6-7   int16   atlas coords x
+          8-9   int16   atlas coords y
+          10-11 uint16  alternative tile id
+
+    `cells` is a list of (x, y, source_id, atlas_x, atlas_y, alternative).
+    """
+    import struct
+    out = bytearray()
+    out += struct.pack("<H", 0)                     # format version
+    for x, y, source_id, ax, ay, alt in cells:
+        out += struct.pack("<hhHhhH", x, y, source_id, ax, ay, alt)
+    return "PackedByteArray(%s)" % ", ".join(str(b) for b in out)
+
+
 def sprite_frames_block(sub_id, ext_ids, speed=5.0):
     """A SpriteFrames sub-resource with one looping animation per direction."""
     anims = []
@@ -155,6 +186,10 @@ default_color = Color(1, 0.788235, 0.235294, 1)
 [node name="Camera" type="Camera2D" parent="."]
 position_smoothing_enabled = true
 position_smoothing_speed = 8.0
+limit_left = 0
+limit_top = 0
+limit_right = 1152
+limit_bottom = 640
 '''.format(L_PLAYER=L_PLAYER, L_GRAZE=L_GRAZE, L_EBULLET=L_EBULLET,
            wall_env=L_WALL | L_ENV, off_y=PLAYER_SPRITE_OFFSET_Y)
 
@@ -366,20 +401,31 @@ def make_tileset():
                    % (rel("assets", "sprites", "tiles", "%s.png" % name), rid))
         # Walls render in a 128 px frame (two tiles tall) so the block's
         # height is not cropped; floors are exactly one 64 px tile.
-        region = "Vector2i(64, 128)" if name == "wall" else "Vector2i(64, 64)"
+        # Every tile, walls included, is exactly one 64 x 64 cell. A
+        # taller region would make walls span two map cells.
+        region = "Vector2i(64, 64)"
         src = ('[sub_resource type="TileSetAtlasSource" id="A_%s"]\n'
                'texture = ExtResource("%s")\n'
                'texture_region_size = %s\n'
                '0:0/0 = 0\n' % (name, rid, region))
         # Walls block movement and bullets, so they get a physics polygon.
         if name == "wall":
+            # Tile-local coordinates are centred on the cell, so a 64 x 64
+            # tile spans -32..32 on BOTH axes. Using 0..64 for y, as an
+            # earlier pass did, drops every wall's collision half a tile
+            # below the wall you can see.
             src += ('0:0/0/physics_layer_0/polygon_0/points = '
-                    'PackedVector2Array(-32, 0, 32, 0, 32, 64, -32, 64)\n')
+                    'PackedVector2Array(-32, -32, 32, -32, 32, 32, '
+                    '-32, 32)\n')
         sources.append(src)
         entries.append('sources/%d = SubResource("A_%s")' % (idx, name))
 
     steps = len(ext) + len(sources) + 1
+    # tile_size is NOT optional. Leave it out and TileSet silently falls
+    # back to 16 x 16, so 64 px art gets laid out on a 16 px grid and the
+    # room renders as a quarter-size smear in the corner.
     body = ('\n[resource]\n'
+            'tile_size = Vector2i(64, 64)\n'
             'physics_layer_0/collision_layer = %d\n' % L_WALL
             + "\n".join(entries) + "\n")
     path = os.path.join(ROOT, "assets", "RoomTileSet.tres")
@@ -402,27 +448,30 @@ def make_room():
     template the other nine get built from - duplicate it, move the markers,
     change the walls.
     """
-    # A 24 x 14 tile arena at 64 px per tile = 1536 x 896 px.
-    w, h, t = 24, 14, 64
+    # An 18 x 10 tile arena at 64 px per tile = 1152 x 640 px, which is the
+    # viewport almost exactly. The whole room is on screen at once, the way
+    # a room-based bullet hell needs: the player has to see every bullet and
+    # every spawn, and a camera that scrolls would hide half the fight.
+    w, h, t = 18, 10, 64
     floor_cells, wall_cells = [], []
     for y in range(h):
         for x in range(w):
+            # Floor goes under EVERYTHING, walls included, so the wall
+            # tiles never sit on a transparent hole.
+            src = (x * 7 + y * 3) % 4
+            floor_cells.append((x, y, src, 0, 0, 0))
             if x in (0, w - 1) or y in (0, h - 1):
-                # source id 4 = wall
-                wall_cells += [x, y, 4, 0, 0]
-            else:
-                # Rotate through the four floor variants so the grid does not
-                # show an obvious repeat.
-                src = (x * 7 + y * 3) % 4
-                floor_cells += [x, y, src, 0, 0]
-
-    def pack(cells):
-        return "PackedInt32Array(%s)" % ", ".join(str(c) for c in cells)
+                wall_cells.append((x, y, 4, 0, 0, 0))   # source 4 = wall
 
     # Spawn markers, kept away from the walls and spread so that the GDD's
     # "at least 200 px from the player" is satisfiable wherever the player is.
-    spawns = [(4, 3), (12, 2), (19, 3), (4, 10), (12, 11), (19, 10)]
-    objects = [(8, 5), (15, 5), (11, 8), (6, 8), (17, 9)]
+    # Interior of an 18 x 10 room is x 1..16, y 1..8. These six are spread to
+    # the corners and mid-edges so that wherever the player stands, at least
+    # one marker satisfies the GDD's "at least 200 px from the player".
+    spawns = [(3, 2), (9, 2), (14, 2), (3, 7), (9, 7), (14, 7)]
+    # Object spots sit in the middle band, where cover actually splits the
+    # room into lanes rather than hugging a wall.
+    objects = [(6, 4), (12, 4), (9, 5), (5, 6), (13, 6)]
 
     nodes = []
     for i, (x, y) in enumerate(spawns):
@@ -480,7 +529,8 @@ y_sort_enabled = true
 {nodes}
 '''.format(d_locked=rel("assets", "sprites", "tiles", "door_locked.png"),
            d_open=rel("assets", "sprites", "tiles", "door_open.png"),
-           floor_data=pack(floor_cells), wall_data=pack(wall_cells),
+           floor_data=encode_tile_map_data(floor_cells),
+           wall_data=encode_tile_map_data(wall_cells),
            nodes="\n".join(nodes)))
 
 
@@ -698,7 +748,7 @@ script = ExtResource("s_gm")
 [node name="Room" parent="." instance=ExtResource("sc_room")]
 
 [node name="Player" parent="." instance=ExtResource("sc_player")]
-position = Vector2(768, 448)
+position = Vector2(576, 320)
 
 [node name="HUD" parent="." instance=ExtResource("sc_hud")]
 ''')
