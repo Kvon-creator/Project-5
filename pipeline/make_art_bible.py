@@ -285,6 +285,21 @@ def palette_rule_page():
 
 
 CAPTIONS = {
+    "props-sheet.jpg": (
+        "PROPS - the three interactive objects, plus the power-up",
+        "Maps one-to-one onto the GDD's Environmental Combat table. Explosive "
+        "Lamp Oil is the explosive barrel: glass flask of burning oil in a "
+        "rope net, lit wick, 2 hits to detonate, 30 damage within 96 px. "
+        "Defensive Tome Stack is the destructible cover, and the sheet "
+        "already gives the three damage stages the scaffold needs - strapped "
+        "and locked, split with pages spilling, then shredded - across 5 "
+        "hits. Scribe's Trap is the trap: a rusted frame of upturned PEN NIBS, "
+        "shown disarmed, armed, and freshly triggered with violet ink on the "
+        "points; 15 damage, re-arms after 2 s. Luminous Pigment Shell is the "
+        "damage power-up that drops every 5th kill - teal, because teal is "
+        "the player's colour, and a shell, which quietly ties it to the "
+        "snail. Note the whole sheet is drawn at a 3/4 view matching the "
+        "character rig."),
     "hero-nib-knight.jpg": (
         "HERO - the Nib Knight  (the anchor asset)",
         "The only hero reference. Stocky, large-helmed proportions: head and "
@@ -346,6 +361,7 @@ ORDER = [
     "room-painted-interior.jpg",
     "room-boss-arena-pixel.jpg",
     "hero-nib-knight.jpg",
+    "props-sheet.jpg",
     "enemy-armored-snail.jpg",
     "enemy-hare-archer.jpg",
     "enemy-rat-demon.jpg",

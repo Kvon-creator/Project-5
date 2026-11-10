@@ -56,15 +56,44 @@ DIR_COUNT = len(DIRECTIONS)
 # --------------------------------------------------------------------------
 
 PALETTE_HEX = {
-    "abyss": "120E1A",         # Void, background, ink outlines
-    "crypt_stone": "2B2335",   # Floor tiles
-    "stone_light": "4E4458",   # Walls, destructible cover
-    "bone": "D8C8A8",          # UI text, highlights
-    "ember": "F06A2A",         # Player accents, explosive barrels, fire
-    "blood_rust": "8E2A2A",    # Traps, damage flashes
-    "graze_gold": "FFC93C",    # Graze Meter, graze sparks, Shockwave ring
-    "spirit_teal": "35D6C4",   # Player shots, damage power-up
-    "hostile_magenta": "FF2E6E",  # Enemy bullets ONLY
+    # --- SIGNAL -----------------------------------------------------------
+    # Gameplay colours. These survived the art-direction change unaltered,
+    # because the references already agreed with the GDD: the hero's nib
+    # glows teal, the boss fires magenta, his plume is ember.
+    "nib_teal": "35D6C4",         # Player shots, the pen-nib glow, power-ups
+    "hostile_magenta": "FF2E6E",  # Enemy bullets. Nothing else, ever.
+    "ember": "F06A2A",            # Hero plume, candle flame, barrels
+    "graze_gold": "FFC93C",       # Graze Meter, graze sparks, Shockwave ring
+
+    # --- WORLD ------------------------------------------------------------
+    # Measured from docs/reference by pipeline/extract_palette.py. These are
+    # LIGHTER and WARMER than the GDD's Crypt Stone / Stone Light, which were
+    # written before the references existed.
+    "parchment": "E2C5A8",        # Paper, cape, gilt filigree, UI text
+    "candle_warm": "BE9E91",      # Stone near a candle
+    "stone_lit": "8A8088",        # Floor in light - the room's main value
+    "stone_mid": "776B70",        # Wall faces
+    "stone_shadow": "554F59",     # Wall shadow, floor away from light
+    "ink_violet": "3C2C39",       # Deep shadow, recesses
+    "ink_black": "18030A",        # Ink pools, contour lines, the void
+    "gilt": "C8A24E",             # Gold vine work on walls
+
+    # --- CREATURE + HERO --------------------------------------------------
+    "creature_violet": "886181",  # Enemy flesh, fur, slug bodies
+    "creature_rust": "BA7977",    # Enemy hide, shells, cloth
+    "deep_plum": "421C39",        # Enemy shadow side
+    "steel": "868178",            # Hero armour
+    "blood_rust": "8E2A2A",       # Traps, damage flashes
+
+    # --- Legacy GDD names -------------------------------------------------
+    # cel_material() mixes toward "abyss" for shadow and "bone" for highlight,
+    # and older asset scripts still ask for these by name. Kept as aliases so
+    # nothing silently breaks; new work should use the names above.
+    "abyss": "18030A",            # -> ink_black
+    "bone": "E2C5A8",             # -> parchment
+    "crypt_stone": "554F59",      # -> stone_shadow
+    "stone_light": "776B70",      # -> stone_mid
+    "spirit_teal": "35D6C4",      # -> nib_teal
 }
 
 
@@ -226,7 +255,7 @@ def _add_lights() -> None:
                           math.radians(25.0))
 
     rim_data = bpy.data.lights.new("Rim", type="SUN")
-    rim_data.energy = 1.1
+    rim_data.energy = 1.4
     rim_data.color = hex_to_rgba(PALETTE_HEX["ember"])[:3]  # warm rim
     rim = bpy.data.objects.new("Rim", rim_data)
     bpy.context.collection.objects.link(rim)
@@ -237,7 +266,7 @@ def _add_lights() -> None:
     # A dim fill so the shadow side is readable rather than pure black. Kept
     # cool so it sits in the Abyss / Crypt Stone end of the palette.
     fill_data = bpy.data.lights.new("Fill", type="SUN")
-    fill_data.energy = 0.5
+    fill_data.energy = 1.15
     fill_data.color = (0.45, 0.42, 0.62)
     fill = bpy.data.objects.new("Fill", fill_data)
     bpy.context.collection.objects.link(fill)
@@ -281,6 +310,33 @@ def _setup_freestyle() -> None:
     linestyle.alpha = 1.0
     # Slight taper so the line feels drawn rather than traced.
     linestyle.thickness_position = "CENTER"
+
+
+def set_ink(crease=True, material_boundary=True, thickness=None,
+            silhouette=True, border=True):
+    """
+    Tune the Freestyle line work after setup_render().
+
+    Why this is a knob rather than a constant: a character built from two
+    dozen primitives generates a crease line at every box corner, and at
+    64 px those interior lines merge into a black mass - the figure stops
+    reading as armour and becomes a blob. Environments are the opposite
+    case: they are large flat surfaces where crease lines are most of the
+    drawing.
+
+    So characters use crease=False (outline and colour boundaries only) and
+    rooms leave it on.
+    """
+    scene = bpy.context.scene
+    if thickness is not None:
+        scene.render.line_thickness = thickness
+    lineset = scene.view_layers[0].freestyle_settings.linesets[0]
+    lineset.select_silhouette = silhouette
+    lineset.select_border = border
+    lineset.select_crease = crease
+    lineset.select_material_boundary = material_boundary
+    if thickness is not None:
+        lineset.linestyle.thickness = thickness
 
 
 # --------------------------------------------------------------------------
@@ -514,6 +570,38 @@ def _flat_shade(ob) -> None:
 # --------------------------------------------------------------------------
 # Rendering
 # --------------------------------------------------------------------------
+
+def join_parts(parts, name="Merged"):
+    """
+    Join every part into ONE mesh, and return it.
+
+    This matters more than it looks. Freestyle draws a silhouette around each
+    separate OBJECT, so a character assembled from two dozen primitives gets
+    two dozen outlines - one around every box, including the ones buried
+    inside the body. At 64 px those stack into a black mass and the figure
+    stops reading as armour.
+
+    Joined into a single mesh, "silhouette" means the figure's true outer
+    contour, which is what an inked drawing actually has. Interior detail
+    then comes from material boundaries alone, at whatever weight suits.
+
+    World positions are preserved: join() rewrites each object's vertices
+    through the active object's inverse world matrix.
+    """
+    if not parts:
+        raise ValueError("join_parts: nothing to join")
+
+    bpy.ops.object.select_all(action="DESELECT")
+    for ob in parts:
+        ob.select_set(True)
+    bpy.context.view_layer.objects.active = parts[0]
+    bpy.ops.object.join()
+
+    merged = bpy.context.view_layer.objects.active
+    merged.name = name
+    _flat_shade(merged)
+    return merged
+
 
 def group_under_pivot(objects, pivot_name="Pivot"):
     """
