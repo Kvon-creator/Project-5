@@ -41,8 +41,17 @@ PLAYER_SPRITE_OFFSET_Y = -9
 PLAYER_HITBOX_RADIUS = 8
 GRAZE_DISTANCE_PX = 20          # GDD: "within 20 px of the player hitbox"
 
-ENEMY_HITBOX_RADIUS = {"standard": 12, "elite": 15, "boss": 26}
-ENEMY_SPRITE_OFFSET_Y = {"standard": -8, "elite": -10, "boss": -16}
+ENEMY_HITBOX_RADIUS = {"snail": 14, "hare": 11, "grotesque": 18, "scribe": 30}
+# Measured, not guessed. Godot centres a sprite on its node origin, so the
+# offset is (frame_centre - content_base): how far the feet sit below the
+# middle of the frame. Get this wrong and the character hovers or sinks.
+# Values from pipeline/check_anchor.py:
+#   snail      160 frame, content base y 105  -> 80 - 105 = -25
+#   hare       128 frame, content base y  74  -> 64 -  74 = -10
+#   grotesque  160 frame, content base y 100  -> 80 - 100 = -20
+#   scribe     256 frame, content base y 155  -> 128 - 155 = -27
+ENEMY_SPRITE_OFFSET_Y = {"snail": -25, "hare": -10, "grotesque": -20,
+                         "scribe": -27}
 
 ENEMY_BULLET_RADIUS = 5
 PLAYER_BULLET_RADIUS = 4
@@ -215,7 +224,7 @@ def make_enemy():
     ext = ['[ext_resource type="Script" '
            'path="res://scripts/Enemy.gd" id="s_enemy"]']
     subs = []
-    for tier in ("standard", "elite", "boss"):
+    for tier in ("snail", "hare", "grotesque", "scribe"):
         ids = {}
         for d in DIRECTIONS:
             rid = "t_%s_%s" % (tier, d)
@@ -226,22 +235,27 @@ def make_enemy():
         subs.append(sprite_frames_block("SF_%s" % tier, ids))
 
     subs.append('[sub_resource type="CircleShape2D" id="Sh_enemy"]\n'
-                'radius = %d.0\n' % ENEMY_HITBOX_RADIUS["standard"])
+                'radius = %d.0\n' % ENEMY_HITBOX_RADIUS["snail"])
 
     body = '''
 [node name="Enemy" type="CharacterBody2D"]
 collision_layer = {L_ENEMY}
 collision_mask = {mask}
 script = ExtResource("s_enemy")
-enemy_type = "standard"
+species = "snail"
+metadata/frames_snail = SubResource("SF_snail")
+metadata/frames_hare = SubResource("SF_hare")
+metadata/frames_grotesque = SubResource("SF_grotesque")
+metadata/frames_scribe = SubResource("SF_scribe")
 
 [node name="Sprite" type="AnimatedSprite2D" parent="."]
-sprite_frames = SubResource("SF_standard")
+sprite_frames = SubResource("SF_snail")
 animation = &"idle_SE"
 offset = Vector2(0, {off_y})
 
 [node name="Hitbox" type="CollisionShape2D" parent="."]
 shape = SubResource("Sh_enemy")
+
 
 [node name="Agent" type="NavigationAgent2D" parent="."]
 radius = 14.0
@@ -249,7 +263,7 @@ path_desired_distance = 8.0
 target_desired_distance = 8.0
 avoidance_enabled = true
 '''.format(L_ENEMY=L_ENEMY, mask=L_WALL | L_ENV | L_PLAYER,
-           off_y=ENEMY_SPRITE_OFFSET_Y["standard"])
+           off_y=ENEMY_SPRITE_OFFSET_Y["snail"])
 
     steps = len(ext) + len(subs) + 1
     write("Enemy.tscn",
@@ -439,78 +453,72 @@ def make_tileset():
 
 def make_room():
     """
-    Room.tscn - one hand-built layout, which is layout #1 of the 10 the GDD
-    asks for. A simple rectangular arena with a wall border, four doors, six
-    enemy spawn markers and five object markers.
+    Room.tscn - a painted background plus collision, not a tilemap.
 
-    GDD: "Layouts: Drawn at random from a pool of 10 hand-built layouts ...
-    objects placed on 3-6 spawn markers per layout". This scene is the
-    template the other nine get built from - duplicate it, move the markers,
-    change the walls.
+    The reference room is a diorama: a floor quadrilateral with three walls
+    standing around it and ornament concentrated on the walls. A 64 px square
+    tile grid cannot express that, so the room is rendered as one image by
+    pipeline/room.py, which also exports room_01.json - the floor outline,
+    door anchors and marker positions, all in PIXELS, projected through the
+    real camera.
+
+    Reading that file rather than hard-coding coordinates means the engine
+    and the art cannot drift apart: change the room's size or the camera
+    angle, re-render, and the collision follows.
     """
-    # An 18 x 10 tile arena at 64 px per tile = 1152 x 640 px, which is the
-    # viewport almost exactly. The whole room is on screen at once, the way
-    # a room-based bullet hell needs: the player has to see every bullet and
-    # every spawn, and a camera that scrolls would hide half the fight.
-    w, h, t = 18, 10, 64
-    floor_cells, wall_cells = [], []
-    for y in range(h):
-        for x in range(w):
-            # Floor goes under EVERYTHING, walls included, so the wall
-            # tiles never sit on a transparent hole.
-            src = (x * 7 + y * 3) % 4
-            floor_cells.append((x, y, src, 0, 0, 0))
-            if x in (0, w - 1) or y in (0, h - 1):
-                wall_cells.append((x, y, 4, 0, 0, 0))   # source 4 = wall
+    layout_path = os.path.join(ROOT, "assets", "sprites", "rooms",
+                               "room_01.json")
+    if not os.path.exists(layout_path):
+        print("[scenes] SKIP Room.tscn - run: blender -b --python "
+              "pipeline/room.py")
+        return
 
-    # Spawn markers, kept away from the walls and spread so that the GDD's
-    # "at least 200 px from the player" is satisfiable wherever the player is.
-    # Interior of an 18 x 10 room is x 1..16, y 1..8. These six are spread to
-    # the corners and mid-edges so that wherever the player stands, at least
-    # one marker satisfies the GDD's "at least 200 px from the player".
-    spawns = [(3, 2), (9, 2), (14, 2), (3, 7), (9, 7), (14, 7)]
-    # Object spots sit in the middle band, where cover actually splits the
-    # room into lanes rather than hugging a wall.
-    objects = [(6, 4), (12, 4), (9, 5), (5, 6), (13, 6)]
+    import json
+    with open(layout_path) as fh:
+        L = json.load(fh)
+
+    poly = L["floor_polygon"]
+    poly_str = ", ".join("%.1f, %.1f" % (p[0], p[1]) for p in poly)
+
+    xs = [p[0] for p in poly]
+    ys = [p[1] for p in poly]
+    centre = ((min(xs) + max(xs)) * 0.5, (min(ys) + max(ys)) * 0.5)
 
     nodes = []
-    for i, (x, y) in enumerate(spawns):
+    for name, pos in L["doors"].items():
+        nodes.append('[node name="Door%s" type="Marker2D" parent="Doors"]\n'
+                     'position = Vector2(%.1f, %.1f)\n'
+                     % (name.capitalize(), pos[0], pos[1]))
+    for i, pos in enumerate(L["spawn_markers"]):
         nodes.append('[node name="Spawn%d" type="Marker2D" '
-                     'parent="SpawnMarkers"]\nposition = Vector2(%d, %d)\n'
-                     % (i, x * t + t // 2, y * t + t // 2))
-    for i, (x, y) in enumerate(objects):
+                     'parent="SpawnMarkers"]\nposition = Vector2(%.1f, %.1f)\n'
+                     % (i, pos[0], pos[1]))
+    for i, pos in enumerate(L["object_markers"]):
         nodes.append('[node name="ObjSpot%d" type="Marker2D" '
-                     'parent="ObjectMarkers"]\nposition = Vector2(%d, %d)\n'
-                     % (i, x * t + t // 2, y * t + t // 2))
+                     'parent="ObjectMarkers"]\nposition = Vector2(%.1f, %.1f)\n'
+                     % (i, pos[0], pos[1]))
 
-    # Four doors, centred on each wall.
-    doors = [("North", w // 2 * t, 0), ("South", w // 2 * t, (h - 1) * t),
-             ("West", 0, h // 2 * t), ("East", (w - 1) * t, h // 2 * t)]
-    for name, x, y in doors:
-        nodes.append('[node name="Door%s" type="Sprite2D" parent="Doors"]\n'
-                     'position = Vector2(%d, %d)\n'
-                     'texture = ExtResource("t_door_locked")\n'
-                     'metadata/locked_texture = ExtResource("t_door_locked")\n'
-                     'metadata/open_texture = ExtResource("t_door_open")\n'
-                     % (name, x + t // 2, y + t // 2))
-
-    write("Room.tscn", '''[gd_scene load_steps=5 format=3]
+    write("Room.tscn", '''[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/RoomManager.gd" id="s_room"]
-[ext_resource type="TileSet" path="res://assets/RoomTileSet.tres" id="ts"]
-[ext_resource type="Texture2D" path="{d_locked}" id="t_door_locked"]
-[ext_resource type="Texture2D" path="{d_open}" id="t_door_open"]
+[ext_resource type="Texture2D" path="{img}" id="t_bg"]
 
 [node name="Room" type="Node2D"]
 script = ExtResource("s_room")
+metadata/floor_centre = Vector2({cx:.1f}, {cy:.1f})
 
-[node name="FloorLayer" type="TileMapLayer" parent="."]
-tile_set = ExtResource("ts")
-tile_map_data = {floor_data}
+[node name="Background" type="Sprite2D" parent="."]
+texture = ExtResource("t_bg")
+centered = false
+z_index = -10
 
-[node name="WallLayer" type="TileMapLayer" parent="."]
-tile_set = ExtResource("ts")
-tile_map_data = {wall_data}
+[node name="Bounds" type="StaticBody2D" parent="."]
+collision_layer = {wall}
+collision_mask = 0
+
+[node name="Shape" type="CollisionPolygon2D" parent="Bounds"]
+build_mode = 1
+polygon = PackedVector2Array({poly})
 
 [node name="NavRegion" type="NavigationRegion2D" parent="."]
 
@@ -527,11 +535,16 @@ y_sort_enabled = true
 y_sort_enabled = true
 
 {nodes}
-'''.format(d_locked=rel("assets", "sprites", "tiles", "door_locked.png"),
-           d_open=rel("assets", "sprites", "tiles", "door_open.png"),
-           floor_data=encode_tile_map_data(floor_cells),
-           wall_data=encode_tile_map_data(wall_cells),
-           nodes="\n".join(nodes)))
+'''.format(img=rel("assets", "sprites", "rooms", L["image"]),
+           cx=centre[0], cy=centre[1], wall=L_WALL,
+           poly=poly_str, nodes="\n".join(nodes)))
+
+    # Main.tscn needs the player to start standing on the floor.
+    global PLAYER_START
+    PLAYER_START = centre
+
+
+PLAYER_START = (576.0, 320.0)
 
 
 # --------------------------------------------------------------------------
@@ -748,10 +761,10 @@ script = ExtResource("s_gm")
 [node name="Room" parent="." instance=ExtResource("sc_room")]
 
 [node name="Player" parent="." instance=ExtResource("sc_player")]
-position = Vector2(576, 320)
+position = Vector2({px:.1f}, {py:.1f})
 
 [node name="HUD" parent="." instance=ExtResource("sc_hud")]
-''')
+'''.format(px=PLAYER_START[0], py=PLAYER_START[1]))
 
 
 def main():
@@ -759,7 +772,7 @@ def main():
     make_enemy()
     make_bullets()
     make_env_objects()
-    make_tileset()
+    # make_tileset() - retired: rooms are painted backgrounds now.
     make_room()
     make_hud()
     make_main()

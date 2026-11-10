@@ -22,7 +22,21 @@ extends CharacterBody2D
 # --------------------------------------------------------------------------
 
 ## "Enemy HP: standard / elite / boss  40 / 120 / 1,200"
-const HP_BY_TYPE := {"standard": 40, "elite": 120, "boss": 1200}
+const HP_BY_TIER := {"standard": 40, "elite": 120, "boss": 1200}
+
+## The bestiary, and which GDD tier each creature belongs to. Species decides
+## how it LOOKS and behaves; tier decides HP and kill energy. Keeping them
+## separate means a second standard-tier creature costs a sprite sheet and
+## one line here, not a balance rewrite.
+const SPECIES_TIER := {
+	"snail": "standard",      # melee, slow, hard front
+	"hare": "standard",       # ranged - holds 150-250 px, takes cover
+	"grotesque": "elite",     # from room 4
+	"scribe": "boss",         # room 8
+}
+
+## Which species default to ranged behaviour.
+const RANGED_SPECIES := ["hare", "scribe"]
 
 ## "Obstacle detection: Within 200 px"
 const OBSTACLE_DETECTION_PX: float = 200.0
@@ -56,7 +70,7 @@ signal hp_changed(hp: int, max_hp: int)
 # State
 # --------------------------------------------------------------------------
 
-@export var enemy_type: String = "standard"   ## "standard" | "elite" | "boss"
+@export var species: String = "snail"   ## snail | hare | grotesque | scribe
 @export var is_ranged: bool = false
 
 var hp: int = 40
@@ -80,10 +94,26 @@ const DIRECTION_NAMES: Array[String] = [
 @onready var hitbox: CollisionShape2D = $Hitbox
 
 
+## The GDD tier this creature counts as, for HP and for kill energy.
+func tier() -> String:
+	return SPECIES_TIER.get(species, "standard")
+
+
+## Point the sprite at this species' SpriteFrames. Enemy.tscn carries one set
+## per species, so a single scene covers the whole bestiary and RoomManager
+## only has to set `species` when it spawns.
+func _apply_species_frames() -> void:
+	var key := "frames_%s" % species
+	if has_meta(key):
+		sprite.sprite_frames = get_meta(key)
+
+
 func _ready() -> void:
-	max_hp = HP_BY_TYPE.get(enemy_type, 40)
+	max_hp = HP_BY_TIER.get(tier(), 40)
 	hp = max_hp
+	is_ranged = is_ranged or species in RANGED_SPECIES
 	add_to_group("enemy")
+	_apply_species_frames()
 	_apply_facing(facing)
 	hp_changed.emit(hp, max_hp)
 
@@ -158,7 +188,7 @@ func die() -> void:
 	_is_dying = true
 	# Built: tell CombatRewards, with the type and the killed-by source it
 	# needs. Wired here because it is a cross-script link.
-	CombatRewards.register_kill(enemy_type, killed_by, global_position)
+	CombatRewards.register_kill(tier(), killed_by, global_position)
 	died.emit(self)
 	_play_death()
 

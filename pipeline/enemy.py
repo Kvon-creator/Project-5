@@ -1,19 +1,30 @@
 """
-Enemies: standard, elite and boss.
+The bestiary: Knight Snail, Hare Archer, Grotesque, and the Ink Scribe.
 
-GDD, Player baseline: "Enemy HP: standard / elite / boss  40 / 120 / 1,200".
-GDD, Room-Based Combat: rooms 1-6 combat, room 7 elite, room 8 boss.
+References:
+    docs/reference/enemy-armored-snail.jpg
+    docs/reference/enemy-hare-archer.jpg
+    docs/reference/enemy-rat-demon.jpg
+    docs/reference/boss-ink-scribe.png
 
-Checked against the anchor asset (pipeline/player.py) for scale, outline
-weight, light direction and palette, as the GDD requires.
+These are marginalia - the creatures drawn in the margins of illuminated
+manuscripts. The knight-versus-snail duel is the single most common gag in
+real medieval margins, which is why the snail is armoured and carrying a
+lance, and the hare archer is nearly as common. They are jokes from the book
+the player is fighting their way out of.
 
-Design rule for enemies: they are built from the SAME palette as the player
-but inverted in emphasis. The player is a cool cloak with a warm Ember belt;
-enemies are warm-dark bodies with Blood Rust accents and no Ember at all. That
-keeps "who is on my side" readable at a glance in a crowded room.
+Mapping onto the GDD's tiers, which drives HP and kill energy:
 
-Hostile Magenta appears NOWHERE on an enemy body - it belongs to enemy
-bullets alone, which is what makes bullets readable against a wave of enemies.
+    Knight Snail   standard  40 HP    melee, slow, hard front
+    Hare Archer    standard  40 HP    ranged - holds 150-250 px, takes cover
+    Grotesque      elite     120 HP   the big one, from room 4
+    Ink Scribe     boss      1200 HP  room 8
+
+SILHOUETTE IS THE BRIEF. Each one has to be identifiable as a black shape:
+the snail is a circle on a wedge, the hare is tall ears over a thin body,
+the grotesque is a hunched arc with a long tail, the scribe is a cowled
+column melting into a puddle. Colour is secondary - in a room full of
+bullets the player reads shapes.
 
 Run:
     blender -b --python pipeline/enemy.py
@@ -28,181 +39,533 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy  # noqa: E402
 import rig_common as rig  # noqa: E402
 
-# Frame size and metres-per-frame for each tier. Bigger tiers get bigger
-# frames so the sprite never crops; the metres-per-frame figure is scaled with
-# the body so all three render at a consistent pixels-per-metre.
-#
-# The anchor is 2.00 m of body in a 3.90 m frame at 128 px. Holding that same
-# ratio (body = 0.513 of frame height) gives each tier the same visual weight
-# per metre, so an elite really does look 1.3x a standard rather than just
-# being drawn bigger.
-ANCHOR_BODY_M = 2.00
-ANCHOR_FRAME_M = 3.90
-ANCHOR_FRAME_PX = 128
+# Pixels per metre, inherited from the anchor asset: the Nib Knight is
+# 1.60 m rendered into a 3.80 m frame at 128 px.
+PX_PER_M = 128 / 3.80
 
-TIERS = {
-    # name:      (body height m, frame px)
-    "standard": (1.70, 128),
-    "elite": (2.25, 160),
-    "boss": (3.60, 256),
+# name:        (frame px, notes)
+SPECIES = {
+    # The snail needs a bigger frame than its body suggests: the pennant and
+    # the couched lance both reach well past the shell, and at 128 px the
+    # pennant was clipped off the top edge.
+    "snail": 160,
+    "hare": 128,
+    "grotesque": 160,
+    "scribe": 256,
 }
 
 
-def frame_height_for(body_m: float, frame_px: int) -> float:
+def frame_m(frame_px):
+    """Metres the frame covers, holding the anchor's pixels-per-metre."""
+    return frame_px / PX_PER_M
+
+
+def creature_materials(tag):
     """
-    Metres covered by the frame, so that pixels-per-metre matches the anchor.
+    The shared creature palette.
 
-    The anchor renders ANCHOR_FRAME_M metres across ANCHOR_FRAME_PX pixels.
-    Hold that px/m constant and a frame of frame_px pixels covers
-    frame_px / (ANCHOR_FRAME_PX / ANCHOR_FRAME_M) metres.
+    Every enemy is violet flesh plus rust hide. That is what the three
+    references have in common, and keeping it strict is what makes a mixed
+    wave read as one family - and as NOT the hero, who is steel and teal.
     """
-    px_per_m = ANCHOR_FRAME_PX / ANCHOR_FRAME_M
-    return frame_px / px_per_m
+    return {
+        "violet": rig.cel_material(f"{tag}Violet", "886181",
+                                   shadow_mix=0.30, highlight_mix=0.26),
+        "rust": rig.cel_material(f"{tag}Rust", "BA7977",
+                                 shadow_mix=0.30, highlight_mix=0.22),
+        "plum": rig.cel_material(f"{tag}Plum", "421C39",
+                                 shadow_mix=0.12, highlight_mix=0.30),
+        "steel": rig.cel_material(f"{tag}Steel", "868178",
+                                  shadow_mix=0.26, highlight_mix=0.32),
+        "wood": rig.cel_material(f"{tag}Wood", "70280C",
+                                 shadow_mix=0.26, highlight_mix=0.30),
+        "parchment": rig.cel_material(f"{tag}Parch", "E2C5A8",
+                                      shadow_mix=0.30, highlight_mix=0.16),
+        "ink": rig.cel_material(f"{tag}Ink", "18030A",
+                                shadow_mix=0.0, highlight_mix=0.14),
+        "ember": rig.cel_material(f"{tag}Ember", "F06A2A",
+                                  shadow_mix=0.30, highlight_mix=0.26),
+    }
 
 
-def build_enemy(tier: str, body_m: float):
+def disc_ring(name, location, radius, thickness, depth, material, verts=24):
+    """A ring standing upright in the XZ plane - a shell whorl seen side-on."""
+    ob = rig.add_ring(name, location, radius=radius, thickness=thickness,
+                      height=depth, material=material, verts=verts)
+    ob.rotation_euler = (math.radians(90.0), 0.0, 0.0)
+    return ob
+
+
+# --------------------------------------------------------------------------
+# Knight Snail - standard, melee
+# --------------------------------------------------------------------------
+
+def build_snail():
     """
-    A hunched, armoured brute. Low-poly, same facet language as the player.
-
-    Shape language, chosen so the three tiers read apart in a silhouette:
-      standard - hunched, narrow, one head spike
-      elite    - broader shoulders, horned helm, shoulder plates
-      boss     - all of the above plus a crown of spikes and a wider stance
+    Circle on a wedge. The shell is the whole read; everything else hangs
+    off it. Low and long, so it never looks like it moves fast.
     """
-    is_elite = tier == "elite"
-    is_boss = tier == "boss"
-
-    # ---- materials -------------------------------------------------------
-    #
-    # DESIGN DECISION worth reviewing. The GDD palette table assigns a swatch
-    # to floors, walls, bullets and UI, but not to enemy bodies. The obvious
-    # first choice, Crypt Stone, is wrong: Crypt Stone IS the floor tile, so
-    # a Crypt Stone enemy standing on a Crypt Stone floor nearly vanishes.
-    # Rendering it proved that - the first pass came out as a black smudge.
-    # Stone Light is taken by walls and destructible cover, with the same
-    # problem against cover.
-    #
-    # So enemy bodies are Blood Rust. It is the one swatch not used by any
-    # large surface, it is not Ember (which is the player's accent) and it is
-    # not Hostile Magenta (reserved for bullets). It also carries the right
-    # meaning: red reads as the thing that hurts you.
-    body_mat = rig.cel_material(f"Enemy{tier}Body", "8E2A2A",
-                                shadow_mix=0.45, highlight_mix=0.20)
-    # Armour plates in Stone Light. On a figure, against a Blood Rust body,
-    # these read as armour rather than as wall.
-    plate_mat = rig.cel_material(f"Enemy{tier}Plate", "4E4458",
-                                 shadow_mix=0.40, highlight_mix=0.26)
-    # Darker rust for straps and bands, so the accent is a value step rather
-    # than a second hue.
-    accent_mat = rig.cel_material(f"Enemy{tier}Accent", "8E2A2A",
-                                  shadow_mix=0.0, highlight_mix=0.42)
-    dark_mat = rig.cel_material(f"Enemy{tier}Dark", "120E1A",
-                                shadow_mix=0.0, highlight_mix=0.16)
-    bone_mat = rig.cel_material(f"Enemy{tier}Bone", "D8C8A8",
-                                shadow_mix=0.48, highlight_mix=0.15)
-
-    # Everything below is authored against a 1.0 m reference and scaled at the
-    # end, so one body of code covers all three tiers.
-    s = body_m / 1.70
+    m = creature_materials("Snail")
     parts = []
 
-    def box(name, loc, size, mat, rot=(0, 0, 0)):
-        parts.append(rig.add_box(name,
-                                 (loc[0] * s, loc[1] * s, loc[2] * s),
-                                 (size[0] * s, size[1] * s, size[2] * s),
-                                 mat, rot))
+    # ---- slug foot -------------------------------------------------------
+    # A long, low wedge in violet. Flattened sphere rather than a box, so
+    # the silhouette's underside is soft against the shell's hard circle.
+    foot = rig.add_sphere("Foot", (0.0, 0.0, 0.20), radius=0.52,
+                          material=m["violet"], segments=12, rings=7)
+    foot.scale = (0.80, 1.75, 0.34)
+    parts.append(foot)
+    # The front of the foot, reaching forward (-Y) under the head.
+    head_foot = rig.add_sphere("FootFront", (0.0, -0.95, 0.16), radius=0.34,
+                               material=m["violet"], segments=10, rings=6)
+    head_foot.scale = (0.72, 1.25, 0.30)
+    parts.append(head_foot)
 
-    def cone(name, loc, r1, r2, d, mat, rot=(0, 0, 0), verts=8):
-        parts.append(rig.add_cone(name,
-                                  (loc[0] * s, loc[1] * s, loc[2] * s),
-                                  r1 * s, r2 * s, d * s, mat, verts, rot))
+    # ---- eye stalks ------------------------------------------------------
+    for side, x in (("L", -0.16), ("R", 0.16)):
+        parts.append(rig.add_cylinder(
+            f"Stalk{side}", (x, -1.22, 0.45), radius=0.035, depth=0.42,
+            material=m["violet"], verts=6,
+            rotation=(math.radians(-24.0), 0.0, 0.0)))
+        parts.append(rig.add_sphere(f"Eye{side}", (x, -1.30, 0.66), 0.058,
+                                    m["plum"], segments=8, rings=5))
 
-    def sphere(name, loc, r, mat, seg=8, rings=6):
-        parts.append(rig.add_sphere(name,
-                                    (loc[0] * s, loc[1] * s, loc[2] * s),
-                                    r * s, mat, seg, rings))
+    # ---- shell -----------------------------------------------------------
+    # Concentric whorls of decreasing radius, each nudged forward and up, so
+    # the spiral reads from the side the way a real shell does.
+    whorls = [(0.78, 0.26, 0.00, 0.78), (0.56, 0.22, 0.06, 0.86),
+              (0.37, 0.18, 0.11, 0.92), (0.21, 0.14, 0.15, 0.96)]
+    for i, (r, t, dy, dz) in enumerate(whorls):
+        parts.append(disc_ring(f"Whorl{i}", (0.0, 0.22 + dy, dz),
+                               radius=r, thickness=t, depth=0.62,
+                               material=m["rust"], verts=20))
+    # Shell core, filling the middle of the spiral.
+    core = rig.add_sphere("ShellCore", (0.0, 0.33, 0.92), radius=0.26,
+                          material=m["rust"], segments=10, rings=6)
+    core.scale = (0.62, 1.0, 1.0)
+    parts.append(core)
 
-    shoulder_w = 0.50 if not (is_elite or is_boss) else 0.62
+    # ---- the great helm, fused to the front of the shell -----------------
+    # This is the joke made literal: the snail wears a knight's helm.
+    parts.append(rig.add_cylinder("Helm", (0.0, -0.46, 0.84),
+                                  radius=0.40, depth=0.54, material=m["steel"],
+                                  verts=10,
+                                  rotation=(math.radians(90.0), 0.0, 0.0)))
+    parts.append(rig.add_cone("HelmBrow", (0.0, -0.74, 0.84),
+                              radius1=0.40, radius2=0.33, depth=0.16,
+                              material=m["steel"], verts=10,
+                              rotation=(math.radians(-90.0), 0.0, 0.0)))
+    # Visor slit - the one dark horizontal band that gives it a face.
+    parts.append(rig.add_box("Visor", (0.0, -0.80, 0.90),
+                             (0.52, 0.08, 0.09), m["ink"]))
+    # Cross-rib down the helm front, like the reference.
+    parts.append(rig.add_box("HelmRib", (0.0, -0.80, 0.74),
+                             (0.08, 0.08, 0.40), m["steel"]))
+
+    # ---- straps ----------------------------------------------------------
+    for i, dz in enumerate((0.55, 0.95)):
+        parts.append(rig.add_box(f"Strap{i}", (0.0, 0.18, dz),
+                                 (0.62, 0.14, 0.09), m["wood"]))
+
+    # ---- pennant ---------------------------------------------------------
+    parts.append(rig.add_cylinder("Pole", (0.22, 0.52, 1.38), radius=0.028,
+                                  depth=0.78, material=m["wood"], verts=6))
+    for i, (dz, w) in enumerate(((1.64, 0.40), (1.53, 0.32))):
+        parts.append(rig.add_box(f"Flag{i}", (0.22 + w * 0.5, 0.52, dz),
+                                 (w, 0.03, 0.22), m["ember"]))
+
+    # ---- couched lance ---------------------------------------------------
+    # Runs the length of the body and well past the head, which is what
+    # tells the player this thing has a dangerous FRONT and a soft flank.
+    parts.append(rig.add_cylinder("Lance", (-0.34, -0.30, 0.62),
+                                  radius=0.045, depth=2.5, material=m["wood"],
+                                  verts=6,
+                                  rotation=(math.radians(90.0), 0.0, 0.0)))
+    parts.append(rig.add_cone("LanceTip", (-0.34, -1.68, 0.62),
+                              radius1=0.09, radius2=0.0, depth=0.34,
+                              material=m["steel"], verts=8,
+                              rotation=(math.radians(-90.0), 0.0, 0.0)))
+    parts.append(rig.add_cone("LanceGuard", (-0.34, -1.42, 0.62),
+                              radius1=0.14, radius2=0.07, depth=0.16,
+                              material=m["steel"], verts=8,
+                              rotation=(math.radians(-90.0), 0.0, 0.0)))
+    return parts
+
+
+# --------------------------------------------------------------------------
+# Hare Archer - standard, ranged
+# --------------------------------------------------------------------------
+
+def build_hare():
+    """
+    Tall ears over a thin upright body. The drawn bow telegraphs the role
+    before the enemy fires: this is the one that keeps its distance.
+    """
+    m = creature_materials("Hare")
+    parts = []
 
     # ---- legs ------------------------------------------------------------
-    stance = 0.17 if not is_boss else 0.26
-    for side, x in (("L", -stance), ("R", stance)):
-        box(f"Thigh{side}", (x, 0.02, 0.38), (0.21, 0.23, 0.50), body_mat)
-        box(f"Shin{side}", (x, -0.04, 0.12), (0.19, 0.25, 0.28), dark_mat)
-        box(f"Claw{side}", (x, -0.19, 0.045), (0.20, 0.14, 0.09), bone_mat)
+    # Digitigrade: a long thigh, a long shin angled back, a big foot. That
+    # backward-kinked leg is half of why a hare reads as a hare.
+    for side, x in (("L", -0.17), ("R", 0.17)):
+        parts.append(rig.add_box(f"Thigh{side}", (x, 0.10, 0.44),
+                                 (0.21, 0.26, 0.46), m["violet"],
+                                 rotation=(math.radians(-14.0), 0, 0)))
+        parts.append(rig.add_box(f"Shin{side}", (x, -0.02, 0.17),
+                                 (0.14, 0.15, 0.36), m["violet"],
+                                 rotation=(math.radians(16.0), 0, 0)))
+        parts.append(rig.add_box(f"Foot{side}", (x, -0.16, 0.04),
+                                 (0.16, 0.42, 0.09), m["violet"]))
 
     # ---- torso -----------------------------------------------------------
-    # Hunched: the chest is pushed forward and the shoulders ride high, so the
-    # silhouette leans at the player.
-    cone("Torso", (0.0, 0.03, 0.88), 0.30, 0.38, 0.52, body_mat)
-    box("Chest", (0.0, -0.10, 1.10), (shoulder_w, 0.30, 0.34), plate_mat)
+    torso = rig.add_sphere("Torso", (0.0, 0.0, 0.90), radius=0.30,
+                           material=m["violet"], segments=12, rings=7)
+    torso.scale = (0.92, 0.78, 1.25)
+    parts.append(torso)
 
-    # Blood Rust chest band - the enemy's single clearest accent, placed where
-    # the player's Ember belt sits so the two read as opposites.
-    box("ChestBand", (0.0, -0.245, 1.07), (shoulder_w * 0.82, 0.07, 0.11),
-        accent_mat)
-
-    # ---- shoulders -------------------------------------------------------
-    for side, x in (("L", -1.0), ("R", 1.0)):
-        sx = x * (shoulder_w * 0.5 + 0.07)
-        if is_elite or is_boss:
-            cone(f"Pauldron{side}", (sx, -0.02, 1.26), 0.20, 0.10, 0.20,
-                 plate_mat)
-            cone(f"Spike{side}", (sx, -0.02, 1.42), 0.07, 0.015, 0.20,
-                 accent_mat)
-        else:
-            box(f"Shoulder{side}", (sx, -0.02, 1.20), (0.17, 0.21, 0.17),
-                plate_mat)
-
-    # ---- arms ------------------------------------------------------------
-    for side, x in (("L", -1.0), ("R", 1.0)):
-        sx = x * (shoulder_w * 0.5 + 0.06)
-        box(f"Arm{side}", (sx, -0.12, 0.98), (0.15, 0.19, 0.42), body_mat)
-        box(f"Fist{side}", (sx, -0.19, 0.76), (0.18, 0.20, 0.17), dark_mat)
+    # ---- rust hood and cape ---------------------------------------------
+    parts.append(rig.add_cone("Cape", (0.0, 0.10, 1.08),
+                              radius1=0.40, radius2=0.26, depth=0.40,
+                              material=m["rust"], verts=10))
+    for i, (loc, size, tilt) in enumerate((
+            ((0.0, 0.26, 0.86), (0.46, 0.07, 0.42), 12.0),
+            ((-0.14, 0.28, 0.70), (0.20, 0.06, 0.30), 18.0))):
+        parts.append(rig.add_box(f"CapeTail{i}", loc, size, m["rust"],
+                                 rotation=(math.radians(tilt), 0, 0)))
 
     # ---- head ------------------------------------------------------------
-    box("Neck", (0.0, 0.0, 1.30), (0.16, 0.16, 0.10), dark_mat)
-    sphere("Skull", (0.0, -0.05, 1.44), 0.19, plate_mat)
-    # A dark visor slot with Blood Rust eyes - the mirror of the player's
-    # Ember eyes in a dark hood.
-    box("Visor", (0.0, -0.195, 1.45), (0.26, 0.06, 0.09), dark_mat)
-    for side, x in (("L", -0.07), ("R", 0.07)):
-        box(f"Eye{side}", (x, -0.225, 1.45), (0.05, 0.03, 0.035), accent_mat)
+    head = rig.add_sphere("Head", (0.0, -0.10, 1.33), radius=0.20,
+                          material=m["violet"], segments=10, rings=6)
+    head.scale = (0.90, 1.30, 0.92)
+    parts.append(head)
+    parts.append(rig.add_cone("Muzzle", (0.0, -0.33, 1.28),
+                              radius1=0.12, radius2=0.06, depth=0.18,
+                              material=m["violet"], verts=8,
+                              rotation=(math.radians(-90.0), 0.0, 0.0)))
+    parts.append(rig.add_sphere("EyeL", (-0.13, -0.22, 1.38), 0.045,
+                                m["parchment"], segments=7, rings=5))
 
-    # Horns. One small spike for a standard, a full horned helm above that.
-    if is_elite or is_boss:
-        for side, x in (("L", -1.0), ("R", 1.0)):
-            cone(f"Horn{side}", (x * 0.15, 0.02, 1.64), 0.065, 0.015, 0.30,
-                 bone_mat, rot=(math.radians(-18.0), 0.0, x * math.radians(26.0)))
-    else:
-        cone("Crest", (0.0, 0.03, 1.60), 0.07, 0.015, 0.20, bone_mat)
+    # Rust hood pushed back off the face, ears through it.
+    hood = rig.add_sphere("Hood", (0.0, 0.05, 1.38), radius=0.23,
+                          material=m["rust"], segments=10, rings=6)
+    hood.scale = (1.0, 0.95, 0.85)
+    parts.append(hood)
 
-    # A boss gets a crown of spikes so its silhouette is unmistakable at the
-    # moment the room 8 door opens.
-    if is_boss:
-        for i in range(6):
-            a = math.pi * (i / 5.0) - math.pi * 0.5
-            cone(f"Crown{i}", (math.sin(a) * 0.20, 0.06 + math.cos(a) * 0.12,
-                               1.62), 0.045, 0.012, 0.26, accent_mat,
-                 rot=(math.radians(-10.0), 0.0, 0.0))
+    # ---- ears - the silhouette ------------------------------------------
+    # Long, upright, slightly splayed. At 48 px this is the ONLY thing that
+    # needs to survive for the player to know what they are shooting at.
+    for side, (x, yaw) in (("L", (-0.10, 9.0)), ("R", (0.10, -9.0))):
+        parts.append(rig.add_cone(
+            f"Ear{side}", (x, 0.02, 1.86), radius1=0.085, radius2=0.035,
+            depth=0.74, material=m["violet"], verts=6,
+            rotation=(math.radians(-7.0), 0.0, math.radians(yaw))))
+        parts.append(rig.add_cone(
+            f"EarIn{side}", (x, -0.045, 1.84), radius1=0.045, radius2=0.018,
+            depth=0.62, material=m["plum"], verts=6,
+            rotation=(math.radians(-7.0), 0.0, math.radians(yaw))))
+
+    # ---- quiver ----------------------------------------------------------
+    parts.append(rig.add_cylinder("Quiver", (-0.24, 0.26, 0.92), radius=0.11,
+                                  depth=0.52, material=m["wood"], verts=8,
+                                  rotation=(math.radians(16.0), 0.0,
+                                            math.radians(-14.0))))
+    for i in range(3):
+        parts.append(rig.add_cylinder(
+            f"Arrow{i}", (-0.26 + i * 0.045, 0.30, 1.24), radius=0.014,
+            depth=0.30, material=m["parchment"], verts=5,
+            rotation=(math.radians(16.0), 0.0, math.radians(-14.0))))
+
+    # ---- arms and bow ----------------------------------------------------
+    # Bow arm forward, string arm drawn back to the cheek.
+    parts.append(rig.add_box("ArmBow", (0.30, -0.26, 1.08),
+                             (0.11, 0.36, 0.11), m["violet"],
+                             rotation=(0.0, math.radians(-16.0), 0.0)))
+    parts.append(rig.add_box("ArmDraw", (-0.24, -0.04, 1.12),
+                             (0.11, 0.26, 0.11), m["violet"]))
+
+    # The bow: an open arc of overlapping beads. A torus here renders as a
+    # closed wheel, which is what the first pass looked like.
+    rig.add_arc(parts, "Bow", (0.40, -0.30, 1.08), radius=0.48,
+                start_deg=-104.0, end_deg=104.0, bead_radius=0.042,
+                material=m["wood"], segments=20, plane="yz", squash=0.55)
+    # Recurved tips.
+    for side, z in (("T", 1.08 + 0.48), ("B", 1.08 - 0.48)):
+        parts.append(rig.add_sphere(f"Tip{side}", (0.40, -0.18, z), 0.04,
+                                    m["wood"], segments=7, rings=5))
+
+    # Bowstring, drawn back into a V.
+    for i, tilt in enumerate((22.0, -22.0)):
+        parts.append(rig.add_box(f"String{i}", (0.16, -0.44, 1.08),
+                                 (0.012, 0.012, 0.52), m["parchment"],
+                                 rotation=(math.radians(tilt), 0.0, 0.0)))
+    # Nocked arrow, pointing forward.
+    parts.append(rig.add_cylinder("Nocked", (0.26, -0.62, 1.08), radius=0.015,
+                                  depth=0.62, material=m["parchment"],
+                                  verts=5,
+                                  rotation=(math.radians(90.0), 0.0, 0.0)))
+    parts.append(rig.add_cone("NockTip", (0.26, -0.96, 1.08),
+                              radius1=0.035, radius2=0.0, depth=0.12,
+                              material=m["steel"], verts=6,
+                              rotation=(math.radians(-90.0), 0.0, 0.0)))
+    return parts
+
+
+# --------------------------------------------------------------------------
+# Grotesque - elite
+# --------------------------------------------------------------------------
+
+def build_grotesque():
+    """
+    A hunched arc with a long curling tail and a second face in its belly.
+
+    The belly face is the detail that makes this a marginalia grotesque
+    rather than a generic monster, and it survives at elite size, so it
+    stays in.
+    """
+    m = creature_materials("Grot")
+    parts = []
+
+    # ---- hind legs -------------------------------------------------------
+    for side, x in (("L", -0.34), ("R", 0.34)):
+        parts.append(rig.add_box(f"Haunch{side}", (x, 0.52, 0.62),
+                                 (0.34, 0.42, 0.56), m["violet"]))
+        parts.append(rig.add_box(f"HindShin{side}", (x, 0.40, 0.22),
+                                 (0.19, 0.20, 0.44), m["violet"],
+                                 rotation=(math.radians(12.0), 0, 0)))
+        parts.append(rig.add_box(f"HindFoot{side}", (x, 0.24, 0.05),
+                                 (0.22, 0.42, 0.10), m["plum"]))
+
+    # ---- body: an arching back ------------------------------------------
+    # Built as three overlapping ellipsoids rising from hips to shoulders,
+    # which gives the hunched arc the reference leads with.
+    for i, (y, z, r, sx, sy, sz) in enumerate((
+            (0.46, 0.96, 0.46, 1.0, 1.05, 0.80),
+            (0.02, 1.08, 0.50, 1.05, 1.10, 0.78),
+            (-0.44, 1.02, 0.46, 1.0, 1.05, 0.76))):
+        seg = rig.add_sphere(f"Back{i}", (0.0, y, z), radius=r,
+                             material=m["rust"], segments=12, rings=7)
+        seg.scale = (sx, sy, sz)
+        parts.append(seg)
+
+    # Violet underside - the reference splits rust hide over violet belly.
+    belly = rig.add_sphere("Belly", (0.0, 0.0, 0.72), radius=0.44,
+                           material=m["violet"], segments=12, rings=7)
+    belly.scale = (0.92, 1.45, 0.62)
+    parts.append(belly)
+
+    # ---- the belly face --------------------------------------------------
+    face = rig.add_sphere("BellyFace", (0.0, -0.34, 0.62), radius=0.26,
+                          material=m["violet"], segments=10, rings=6)
+    face.scale = (1.0, 0.65, 1.0)
+    parts.append(face)
+    # A wide grin of small teeth.
+    parts.append(rig.add_box("Grin", (0.0, -0.52, 0.54),
+                             (0.34, 0.07, 0.10), m["ink"]))
+    for i in range(5):
+        parts.append(rig.add_box(f"GrinTooth{i}", (-0.13 + i * 0.065,
+                                                   -0.55, 0.555),
+                                 (0.035, 0.03, 0.07), m["parchment"]))
+    for side, x in (("L", -0.10), ("R", 0.10)):
+        parts.append(rig.add_box(f"GrinEye{side}", (x, -0.53, 0.72),
+                                 (0.08, 0.04, 0.035), m["ink"]))
+
+    # ---- fore legs -------------------------------------------------------
+    for side, x in (("L", -0.30), ("R", 0.30)):
+        parts.append(rig.add_box(f"Fore{side}", (x, -0.50, 0.50),
+                                 (0.17, 0.19, 0.74), m["violet"]))
+        parts.append(rig.add_box(f"Paw{side}", (x, -0.60, 0.07),
+                                 (0.20, 0.34, 0.12), m["plum"]))
+        for c in range(3):
+            parts.append(rig.add_cone(
+                f"Claw{side}{c}", (x - 0.06 + c * 0.06, -0.80, 0.055),
+                radius1=0.025, radius2=0.0, depth=0.14, material=m["parchment"],
+                verts=5, rotation=(math.radians(-90.0), 0.0, 0.0)))
+
+    # ---- head ------------------------------------------------------------
+    skull = rig.add_sphere("Skull", (0.0, -0.80, 1.28), radius=0.33,
+                           material=m["rust"], segments=12, rings=7)
+    skull.scale = (0.92, 1.08, 0.92)
+    parts.append(skull)
+    # Open jaws: upper and lower cones, hinged apart.
+    parts.append(rig.add_cone("Upper", (0.0, -1.22, 1.30),
+                              radius1=0.27, radius2=0.14, depth=0.52,
+                              material=m["rust"], verts=8,
+                              rotation=(math.radians(-78.0), 0.0, 0.0)))
+    parts.append(rig.add_cone("Lower", (0.0, -1.16, 1.02),
+                              radius1=0.23, radius2=0.11, depth=0.44,
+                              material=m["violet"], verts=8,
+                              rotation=(math.radians(-104.0), 0.0, 0.0)))
+    parts.append(rig.add_box("Maw", (0.0, -1.22, 1.17),
+                             (0.30, 0.22, 0.14), m["ink"]))
+    for i in range(4):
+        parts.append(rig.add_cone(f"FangU{i}", (-0.11 + i * 0.073, -1.33,
+                                                1.18),
+                                  radius1=0.032, radius2=0.0, depth=0.13,
+                                  material=m["parchment"], verts=5,
+                                  rotation=(math.radians(180.0), 0.0, 0.0)))
+        parts.append(rig.add_cone(f"FangL{i}", (-0.11 + i * 0.073, -1.30,
+                                                1.09),
+                                  radius1=0.028, radius2=0.0, depth=0.11,
+                                  material=m["parchment"], verts=5))
+    # Pointed ears, swept back.
+    for side, (x, yaw) in (("L", (-0.22, 22.0)), ("R", (0.22, -22.0))):
+        parts.append(rig.add_cone(
+            f"Ear{side}", (x, -0.62, 1.58), radius1=0.13, radius2=0.0,
+            depth=0.38, material=m["rust"], verts=6,
+            rotation=(math.radians(22.0), 0.0, math.radians(yaw))))
+    parts.append(rig.add_sphere("EyeGlow", (0.14, -1.00, 1.38), 0.055,
+                                m["parchment"], segments=7, rings=5))
+
+    # ---- tail ------------------------------------------------------------
+    # Curls up and back over the haunches. Beads overlap and taper; the
+    # first pass spaced them wider than their radius and the tail rendered
+    # as a line of floating bubbles trailing off into space.
+    rig.add_arc(parts, "Tail", (0.0, 0.62, 1.00), radius=0.78,
+                start_deg=-62.0, end_deg=96.0, bead_radius=0.17,
+                material=m["violet"], segments=12, plane="yz",
+                squash=-0.95, taper=0.30)
 
     return parts
 
 
+# --------------------------------------------------------------------------
+# Ink Scribe - boss
+# --------------------------------------------------------------------------
+
+def build_scribe():
+    """
+    A cowled column melting into a puddle.
+
+    The reference has no legs and no face: the robe simply becomes ink
+    somewhere below the waist. That ink is the same stuff pooled on every
+    room's floor, which is the detail tying the whole dungeon to this fight.
+    """
+    m = creature_materials("Scribe")
+    parts = []
+
+    # ---- the spreading pool ---------------------------------------------
+    # Rendered as overlapping flat discs. The boss stands IN his own spill.
+    for i, (x, y, r) in enumerate(((0.0, 0.0, 1.08), (-0.78, 0.32, 0.62),
+                                   (0.86, -0.22, 0.58), (0.18, 0.70, 0.52),
+                                   (-0.40, -0.64, 0.48))):
+        blob = rig.add_cylinder(f"Pool{i}", (x, y, 0.03), radius=r,
+                                depth=0.06, material=m["ink"], verts=14)
+        blob.scale = (1.0, 0.74, 1.0)
+        parts.append(blob)
+
+    # ---- robe ------------------------------------------------------------
+    # Wide at the hem, narrowing to the shoulders. The bottom third is ink,
+    # the top is parchment - the transition is the character.
+    parts.append(rig.add_cone("RobeLow", (0.0, 0.0, 0.52),
+                              radius1=0.92, radius2=0.74, depth=1.45,
+                              material=m["ink"], verts=14))
+    parts.append(rig.add_cone("RobeMid", (0.0, 0.0, 1.45),
+                              radius1=0.74, radius2=0.56, depth=1.40,
+                              material=m["plum"], verts=14))
+    parts.append(rig.add_cone("RobeTop", (0.0, 0.0, 2.25),
+                              radius1=0.66, radius2=0.48, depth=1.00,
+                              material=m["parchment"], verts=14))
+
+    # Drips hanging off the hem, varying length so it reads as running ink.
+    for i, (ang, length) in enumerate(((20, 0.55), (75, 0.34), (130, 0.62),
+                                       (200, 0.40), (255, 0.58),
+                                       (310, 0.30))):
+        a = math.radians(ang)
+        parts.append(rig.add_cylinder(
+            f"Drip{i}", (math.cos(a) * 0.86, math.sin(a) * 0.86,
+                         0.12 + length * 0.5),
+            radius=0.085, depth=length, material=m["ink"], verts=6))
+
+    # ---- shoulders and cowl ---------------------------------------------
+    parts.append(rig.add_cone("Mantle", (0.0, 0.0, 2.72),
+                              radius1=0.62, radius2=0.40, depth=0.42,
+                              material=m["parchment"], verts=12))
+    cowl = rig.add_sphere("Cowl", (0.0, 0.10, 3.02), radius=0.44,
+                          material=m["parchment"], segments=12, rings=7)
+    cowl.scale = (1.0, 1.05, 1.1)
+    parts.append(cowl)
+    # Hood peak, swept back - the facing cue, same trick as the hero's plume.
+    parts.append(rig.add_cone("Peak", (0.0, 0.42, 3.22),
+                              radius1=0.34, radius2=0.05, depth=0.70,
+                              material=m["parchment"], verts=8,
+                              rotation=(math.radians(52.0), 0.0, 0.0)))
+    # The void where a face should be. Faceless is the point.
+    # Pushed clear of the cowl so the hole actually reads. Faceless is the
+    # whole character; a void buried inside the hood sphere shows nothing.
+    parts.append(rig.add_cylinder("Void", (0.0, -0.46, 2.96), radius=0.33,
+                                  depth=0.22, material=m["ink"], verts=12,
+                                  rotation=(math.radians(90.0), 0.0, 0.0)))
+
+    # ---- arms, quill, tome ----------------------------------------------
+    # Right arm raised with the quill - the casting pose from the arena
+    # reference. Left arm holds the book.
+    parts.append(rig.add_cylinder("ArmR", (0.62, -0.30, 2.58), radius=0.14,
+                                  depth=0.95, material=m["plum"], verts=8,
+                                  rotation=(math.radians(28.0), 0.0,
+                                            math.radians(-30.0))))
+    parts.append(rig.add_sphere("HandR", (0.92, -0.48, 3.00), 0.14,
+                                m["parchment"], segments=8, rings=5))
+    # The quill: a long tapered feather, parchment, held point-down.
+    parts.append(rig.add_cone("Quill", (1.02, -0.52, 3.46),
+                              radius1=0.055, radius2=0.015, depth=1.05,
+                              material=m["parchment"], verts=6,
+                              rotation=(math.radians(16.0), 0.0,
+                                        math.radians(-12.0))))
+    for i, (dz, w) in enumerate(((3.70, 0.17), (3.52, 0.20), (3.34, 0.17))):
+        parts.append(rig.add_box(f"Vane{i}", (1.06, -0.52, dz),
+                                 (w, 0.03, 0.22), m["parchment"],
+                                 rotation=(0.0, math.radians(14.0), 0.0)))
+    # Ink loaded on the nib end.
+    parts.append(rig.add_cone("QuillInk", (0.98, -0.52, 2.96),
+                              radius1=0.05, radius2=0.0, depth=0.22,
+                              material=m["ink"], verts=6,
+                              rotation=(math.radians(180.0), 0.0, 0.0)))
+
+    parts.append(rig.add_cylinder("ArmL", (-0.60, -0.26, 2.42), radius=0.14,
+                                  depth=0.80, material=m["plum"], verts=8,
+                                  rotation=(math.radians(-14.0), 0.0,
+                                            math.radians(22.0))))
+    parts.append(rig.add_box("Tome", (-0.80, -0.52, 2.18),
+                             (0.52, 0.38, 0.62), m["rust"]))
+    parts.append(rig.add_box("TomePages", (-0.80, -0.56, 2.18),
+                             (0.44, 0.34, 0.50), m["parchment"]))
+    return parts
+
+
+# --------------------------------------------------------------------------
+# Driver
+# --------------------------------------------------------------------------
+
+BUILDERS = {
+    "snail": build_snail,
+    "hare": build_hare,
+    "grotesque": build_grotesque,
+    "scribe": build_scribe,
+}
+
+
+def render_species(name, frame_px):
+    rig.clear_scene()
+    rig.setup_render(frame_px=frame_px, subject_height_m=1.0,
+                     frame_height_m=frame_m(frame_px))
+    # Same ink treatment as the hero, so the cast matches: outline plus
+    # colour boundaries, no creases. See rig_common.set_ink().
+    rig.set_ink(crease=False, material_boundary=True, thickness=0.8)
+
+    merged = rig.join_parts(BUILDERS[name](), f"Enemy_{name}")
+    pivot = rig.group_under_pivot([merged], f"{name}Pivot")
+
+    out_dir = rig.sprite_dir("enemy")
+    rig.render_sheet(pivot, out_dir, f"enemy_{name}_idle", start_yaw_deg=45.0)
+    print(f"[enemy] {name} -> {out_dir}")
+
+
 def main():
-    for tier, (body_m, frame_px) in TIERS.items():
-        rig.clear_scene()
-        rig.setup_render(frame_px=frame_px,
-                         subject_height_m=body_m,
-                         frame_height_m=frame_height_for(body_m, frame_px))
-
-        parts = build_enemy(tier, body_m)
-        pivot = rig.group_under_pivot(parts, f"Enemy{tier}Pivot")
-
-        out_dir = rig.sprite_dir("enemy")
-        rig.render_sheet(pivot, out_dir, f"enemy_{tier}_idle",
-                         start_yaw_deg=45.0)
-        print(f"[enemy] {tier} written to {out_dir}")
+    only = os.environ.get("ONLY")
+    for name, frame_px in SPECIES.items():
+        if only and name != only:
+            continue
+        render_species(name, frame_px)
 
 
 if __name__ == "__main__":

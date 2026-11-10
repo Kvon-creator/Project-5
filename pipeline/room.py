@@ -17,6 +17,7 @@ data.
     blender -b --python pipeline/room.py
 """
 
+import json
 import math
 import os
 import sys
@@ -24,6 +25,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import bpy  # noqa: E402
+from mathutils import Vector  # noqa: E402
 import rig_common as rig  # noqa: E402
 
 # --------------------------------------------------------------------------
@@ -45,8 +47,16 @@ EMBER = "F06A2A"          # candle flame
 # Room dimensions, in metres. 1 m = 32 px in gameplay space.
 # --------------------------------------------------------------------------
 
-ROOM_W = 36.0             # 1152 px - matches the viewport
-ROOM_D = 20.0             # 640 px
+ROOM_W = 36.0
+# Depth is set by how the floor PROJECTS, not by how it measures.
+#
+# At a 45 deg camera a floor's on-screen height is depth * sin(45) = 0.71 of
+# its world depth, so a 20 m room painted a 964 x 379 px play area - a 2.5:1
+# strip. In that strip the Shockwave's 150 px radius covers 79% of the
+# available height, which would make the GDD's most expensive ability close
+# to a free room-clear. 28 m projects to roughly 964 x 530, near 16:9, and
+# the GDD's numbers mean what they were balanced to mean.
+ROOM_D = 28.0
 WALL_H = 4.2
 WALL_T = 1.0
 
@@ -392,6 +402,75 @@ def main():
     bpy.context.scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
     print("[room] ->", path)
+
+    export_layout(os.path.join(out_dir, "room_01.json"))
+
+
+def to_pixels(world_xyz):
+    """
+    Project a world point to pixel coordinates in the rendered image.
+
+    Needed because the room is now a painted background rather than a grid of
+    tiles, so Godot has no idea where the floor is. Guessing the floor's
+    outline by eye would drift every time the camera or room size changed;
+    projecting the real corners through the real camera cannot drift.
+
+    Note the Y flip: Blender's normalised view has +Y up, Godot's screen
+    space has +Y down.
+    """
+    from bpy_extras.object_utils import world_to_camera_view
+    scene = bpy.context.scene
+    co = world_to_camera_view(scene, scene.camera, Vector(world_xyz))
+    return [round(co.x * RENDER_W, 1), round((1.0 - co.y) * RENDER_H, 1)]
+
+
+def export_layout(path):
+    """
+    Write the room's collision and anchor points, in pixels, beside the PNG.
+
+    pipeline/make_scenes.py reads this to build Room.tscn, so the engine and
+    the art can never disagree about where a wall is.
+    """
+    hw, hd = ROOM_W * 0.5, ROOM_D * 0.5
+
+    # Floor outline, anticlockwise on screen. The player is kept inside this.
+    floor = [to_pixels((-hw, -hd, 0.0)), to_pixels((hw, -hd, 0.0)),
+             to_pixels((hw, hd, 0.0)), to_pixels((-hw, hd, 0.0))]
+
+    doors = {
+        "north": to_pixels((0.0, hd, 0.0)),
+        "west": to_pixels((-hw, 0.0, 0.0)),
+        "east": to_pixels((hw, 0.0, 0.0)),
+    }
+
+    # Enemy spawn points, spread so that wherever the player stands at least
+    # one is the GDD's "at least 200 px from the player" away.
+    spawn_cells = [(-0.62, 0.58), (0.0, 0.66), (0.62, 0.58),
+                   (-0.70, -0.10), (0.70, -0.10), (0.0, -0.55)]
+    spawns = [to_pixels((u * hw, v * hd, 0.0)) for u, v in spawn_cells]
+
+    # Where the 1-3 interactive objects may appear. GDD: "objects placed on
+    # 3-6 spawn markers per layout".
+    object_cells = [(-0.40, 0.22), (0.40, 0.22), (0.0, -0.05),
+                    (-0.46, -0.38), (0.46, -0.38)]
+    objects = [to_pixels((u * hw, v * hd, 0.0)) for u, v in object_cells]
+
+    data = {
+        "name": "room_01",
+        "image": "room_01.png",
+        "size": [RENDER_W, RENDER_H],
+        "floor_polygon": floor,
+        "doors": doors,
+        "spawn_markers": spawns,
+        "object_markers": objects,
+        "notes": ("Pixel coordinates in the rendered image. floor_polygon is "
+                  "the walkable boundary; the south edge has no painted wall "
+                  "because the camera looks in from that side, so its "
+                  "collision is invisible by design."),
+    }
+    with open(path, "w") as fh:
+        json.dump(data, fh, indent=2)
+    print("[room] layout ->", path)
 
 
 if __name__ == "__main__":

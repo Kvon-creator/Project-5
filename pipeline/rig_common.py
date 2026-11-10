@@ -561,6 +561,40 @@ def add_cone(name, location, radius1, radius2, depth, material=None, verts=8,
     return ob
 
 
+def add_arc(parts, name, centre, radius, start_deg, end_deg, bead_radius,
+            material, segments=10, plane="yz", squash=1.0, taper=1.0):
+    """
+    An open arc built from overlapping beads. Appends to `parts`.
+
+    A torus cannot do this: a torus is always a CLOSED ring, so a bow built
+    from one renders as a wheel. An arc also needs to taper, which a torus
+    cannot do either - a tail that keeps its thickness to the tip reads as a
+    tube, not a tail.
+
+    The beads must OVERLAP. Spacing wider than the bead radius renders as a
+    string of separate bubbles rather than one limb, which is exactly how a
+    first attempt at the grotesque's tail came out.
+
+    plane  - "yz" for a vertical arc bulging forward (a bow, a tail)
+             "xz" for a vertical arc bulging sideways
+    squash - flattens the bulge axis; 1.0 is circular
+    taper  - bead radius at the far end, as a fraction of bead_radius
+    """
+    cx, cy, cz = centre
+    for i in range(segments):
+        t = i / float(segments - 1)
+        ang = math.radians(start_deg + (end_deg - start_deg) * t)
+        off = radius * math.sin(ang)
+        bulge = -radius * math.cos(ang) * squash
+        if plane == "yz":
+            loc = (cx, cy + bulge, cz + off)
+        else:
+            loc = (cx + bulge, cy, cz + off)
+        r = bead_radius * (1.0 - (1.0 - taper) * t)
+        parts.append(add_sphere(f"{name}{i}", loc, r, material,
+                                segments=8, rings=5))
+
+
 def _flat_shade(ob) -> None:
     """Low-poly means visible facets. Kill any auto-smoothing."""
     for poly in ob.data.polygons:

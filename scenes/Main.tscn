@@ -12,6 +12,6 @@ script = ExtResource("s_gm")
 [node name="Room" parent="." instance=ExtResource("sc_room")]
 
 [node name="Player" parent="." instance=ExtResource("sc_player")]
-position = Vector2(576, 320)
+position = Vector2(576.0, 376.8)
 
 [node name="HUD" parent="." instance=ExtResource("sc_hud")]

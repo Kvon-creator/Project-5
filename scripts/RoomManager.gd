@@ -85,8 +85,12 @@ var doors_locked: bool = false
 ## GDD: "no repeats in a run".
 var used_layouts: Array[int] = []
 
-@onready var floor_layer: TileMapLayer = $FloorLayer
-@onready var wall_layer: TileMapLayer = $WallLayer
+## The room is a painted background plus collision, not a tilemap. See
+## pipeline/room.py - it renders the image AND exports the floor outline and
+## marker positions in pixels, which pipeline/make_scenes.py turns into this
+## scene. That is why nothing here hard-codes a coordinate.
+@onready var background: Sprite2D = $Background
+@onready var bounds: StaticBody2D = $Bounds
 @onready var spawn_markers: Node2D = $SpawnMarkers
 @onready var object_markers: Node2D = $ObjectMarkers
 @onready var doors: Node2D = $Doors
@@ -179,14 +183,49 @@ func _refresh_door_visuals() -> void:
 	if not is_instance_valid(doors):
 		return
 	for door in doors.get_children():
-		if door is Sprite2D:
-			var s := door as Sprite2D
-			# Door scenes carry both textures as metadata so this script does
-			# not need to know asset paths.
-			var key := "locked_texture" if doors_locked else "open_texture"
-			if s.has_meta(key):
-				s.texture = s.get_meta(key)
-			# Locked doors pulse faintly in Blood Rust, so a player who has
-			# lost track of why they cannot leave gets told without a UI
-			# element covering the room.
-			s.modulate = Palette.BLOOD_RUST if doors_locked else Color.WHITE
+		# Doors are Marker2D anchors right now: the archways are painted into
+		# the room background, so there is no sprite to swap. They mark WHERE
+		# a door is, which is what spawning and the lock state need.
+		#
+		# TODO(K'von): locked/unlocked art. Two options, both fine:
+		#   - a Sprite2D overlay per door, swapped on lock state
+		#   - render each room twice (doors shut / doors open) and swap the
+		#     background, which costs more disk but zero seams
+		# Until then the lock is enforced by Bounds, which is correct during
+		# combat anyway: the GDD locks doors for the whole fight and only
+		# unlocks once the last wave is down.
+		if door is CanvasItem:
+			(door as CanvasItem).modulate = (
+					Palette.BLOOD_RUST if doors_locked else Color.WHITE)
+
+
+## A spawn marker at least MIN_SPAWN_DISTANCE_PX from `from_position`.
+## Returns the farthest marker if none qualifies, so spawning never fails.
+## GDD: "Enemies spawn at least 200 px from the player".
+func pick_spawn_point(from_position: Vector2) -> Vector2:
+	var best: Vector2 = global_position
+	var best_distance := -1.0
+	var valid: Array[Vector2] = []
+
+	for marker in spawn_markers.get_children():
+		if marker is not Node2D:
+			continue
+		var p: Vector2 = (marker as Node2D).global_position
+		var d := p.distance_to(from_position)
+		if d >= MIN_SPAWN_DISTANCE_PX:
+			valid.append(p)
+		if d > best_distance:
+			best_distance = d
+			best = p
+
+	if valid.is_empty():
+		return best
+	return valid[randi() % valid.size()]
+
+
+## The centre of the walkable floor, in room coordinates. Written into the
+## scene by the generator from the projected floor outline.
+func floor_centre() -> Vector2:
+	if has_meta("floor_centre"):
+		return get_meta("floor_centre")
+	return Vector2.ZERO

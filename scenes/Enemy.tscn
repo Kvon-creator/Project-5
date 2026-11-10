@@ -1,36 +1,44 @@
-[gd_scene load_steps=30 format=3]
+[gd_scene load_steps=39 format=3]
 
 [ext_resource type="Script" path="res://scripts/Enemy.gd" id="s_enemy"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_SE.png" id="t_standard_SE"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_E.png" id="t_standard_E"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_NE.png" id="t_standard_NE"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_N.png" id="t_standard_N"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_NW.png" id="t_standard_NW"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_W.png" id="t_standard_W"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_SW.png" id="t_standard_SW"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_S.png" id="t_standard_S"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_SE.png" id="t_elite_SE"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_E.png" id="t_elite_E"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_NE.png" id="t_elite_NE"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_N.png" id="t_elite_N"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_NW.png" id="t_elite_NW"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_W.png" id="t_elite_W"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_SW.png" id="t_elite_SW"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_S.png" id="t_elite_S"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_SE.png" id="t_boss_SE"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_E.png" id="t_boss_E"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_NE.png" id="t_boss_NE"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_N.png" id="t_boss_N"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_NW.png" id="t_boss_NW"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_W.png" id="t_boss_W"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_SW.png" id="t_boss_SW"]
-[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_S.png" id="t_boss_S"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_snail_idle_SE.png" id="t_snail_SE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_snail_idle_E.png" id="t_snail_E"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_snail_idle_NE.png" id="t_snail_NE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_snail_idle_N.png" id="t_snail_N"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_snail_idle_NW.png" id="t_snail_NW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_snail_idle_W.png" id="t_snail_W"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_snail_idle_SW.png" id="t_snail_SW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_snail_idle_S.png" id="t_snail_S"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_hare_idle_SE.png" id="t_hare_SE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_hare_idle_E.png" id="t_hare_E"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_hare_idle_NE.png" id="t_hare_NE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_hare_idle_N.png" id="t_hare_N"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_hare_idle_NW.png" id="t_hare_NW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_hare_idle_W.png" id="t_hare_W"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_hare_idle_SW.png" id="t_hare_SW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_hare_idle_S.png" id="t_hare_S"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_grotesque_idle_SE.png" id="t_grotesque_SE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_grotesque_idle_E.png" id="t_grotesque_E"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_grotesque_idle_NE.png" id="t_grotesque_NE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_grotesque_idle_N.png" id="t_grotesque_N"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_grotesque_idle_NW.png" id="t_grotesque_NW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_grotesque_idle_W.png" id="t_grotesque_W"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_grotesque_idle_SW.png" id="t_grotesque_SW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_grotesque_idle_S.png" id="t_grotesque_S"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_scribe_idle_SE.png" id="t_scribe_SE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_scribe_idle_E.png" id="t_scribe_E"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_scribe_idle_NE.png" id="t_scribe_NE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_scribe_idle_N.png" id="t_scribe_N"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_scribe_idle_NW.png" id="t_scribe_NW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_scribe_idle_W.png" id="t_scribe_W"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_scribe_idle_SW.png" id="t_scribe_SW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_scribe_idle_S.png" id="t_scribe_S"]
 
-[sub_resource type="SpriteFrames" id="SF_standard"]
+[sub_resource type="SpriteFrames" id="SF_snail"]
 animations = [{
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_standard_SE")
+"texture": ExtResource("t_snail_SE")
 }],
 "loop": true,
 "name": &"idle_SE",
@@ -38,7 +46,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_standard_E")
+"texture": ExtResource("t_snail_E")
 }],
 "loop": true,
 "name": &"idle_E",
@@ -46,7 +54,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_standard_NE")
+"texture": ExtResource("t_snail_NE")
 }],
 "loop": true,
 "name": &"idle_NE",
@@ -54,7 +62,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_standard_N")
+"texture": ExtResource("t_snail_N")
 }],
 "loop": true,
 "name": &"idle_N",
@@ -62,7 +70,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_standard_NW")
+"texture": ExtResource("t_snail_NW")
 }],
 "loop": true,
 "name": &"idle_NW",
@@ -70,7 +78,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_standard_W")
+"texture": ExtResource("t_snail_W")
 }],
 "loop": true,
 "name": &"idle_W",
@@ -78,7 +86,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_standard_SW")
+"texture": ExtResource("t_snail_SW")
 }],
 "loop": true,
 "name": &"idle_SW",
@@ -86,18 +94,18 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_standard_S")
+"texture": ExtResource("t_snail_S")
 }],
 "loop": true,
 "name": &"idle_S",
 "speed": 5.0
 }]
 
-[sub_resource type="SpriteFrames" id="SF_elite"]
+[sub_resource type="SpriteFrames" id="SF_hare"]
 animations = [{
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_elite_SE")
+"texture": ExtResource("t_hare_SE")
 }],
 "loop": true,
 "name": &"idle_SE",
@@ -105,7 +113,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_elite_E")
+"texture": ExtResource("t_hare_E")
 }],
 "loop": true,
 "name": &"idle_E",
@@ -113,7 +121,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_elite_NE")
+"texture": ExtResource("t_hare_NE")
 }],
 "loop": true,
 "name": &"idle_NE",
@@ -121,7 +129,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_elite_N")
+"texture": ExtResource("t_hare_N")
 }],
 "loop": true,
 "name": &"idle_N",
@@ -129,7 +137,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_elite_NW")
+"texture": ExtResource("t_hare_NW")
 }],
 "loop": true,
 "name": &"idle_NW",
@@ -137,7 +145,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_elite_W")
+"texture": ExtResource("t_hare_W")
 }],
 "loop": true,
 "name": &"idle_W",
@@ -145,7 +153,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_elite_SW")
+"texture": ExtResource("t_hare_SW")
 }],
 "loop": true,
 "name": &"idle_SW",
@@ -153,18 +161,18 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_elite_S")
+"texture": ExtResource("t_hare_S")
 }],
 "loop": true,
 "name": &"idle_S",
 "speed": 5.0
 }]
 
-[sub_resource type="SpriteFrames" id="SF_boss"]
+[sub_resource type="SpriteFrames" id="SF_grotesque"]
 animations = [{
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_boss_SE")
+"texture": ExtResource("t_grotesque_SE")
 }],
 "loop": true,
 "name": &"idle_SE",
@@ -172,7 +180,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_boss_E")
+"texture": ExtResource("t_grotesque_E")
 }],
 "loop": true,
 "name": &"idle_E",
@@ -180,7 +188,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_boss_NE")
+"texture": ExtResource("t_grotesque_NE")
 }],
 "loop": true,
 "name": &"idle_NE",
@@ -188,7 +196,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_boss_N")
+"texture": ExtResource("t_grotesque_N")
 }],
 "loop": true,
 "name": &"idle_N",
@@ -196,7 +204,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_boss_NW")
+"texture": ExtResource("t_grotesque_NW")
 }],
 "loop": true,
 "name": &"idle_NW",
@@ -204,7 +212,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_boss_W")
+"texture": ExtResource("t_grotesque_W")
 }],
 "loop": true,
 "name": &"idle_W",
@@ -212,7 +220,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_boss_SW")
+"texture": ExtResource("t_grotesque_SW")
 }],
 "loop": true,
 "name": &"idle_SW",
@@ -220,7 +228,74 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_boss_S")
+"texture": ExtResource("t_grotesque_S")
+}],
+"loop": true,
+"name": &"idle_S",
+"speed": 5.0
+}]
+
+[sub_resource type="SpriteFrames" id="SF_scribe"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_scribe_SE")
+}],
+"loop": true,
+"name": &"idle_SE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_scribe_E")
+}],
+"loop": true,
+"name": &"idle_E",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_scribe_NE")
+}],
+"loop": true,
+"name": &"idle_NE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_scribe_N")
+}],
+"loop": true,
+"name": &"idle_N",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_scribe_NW")
+}],
+"loop": true,
+"name": &"idle_NW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_scribe_W")
+}],
+"loop": true,
+"name": &"idle_W",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_scribe_SW")
+}],
+"loop": true,
+"name": &"idle_SW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_scribe_S")
 }],
 "loop": true,
 "name": &"idle_S",
@@ -228,21 +303,26 @@ animations = [{
 }]
 
 [sub_resource type="CircleShape2D" id="Sh_enemy"]
-radius = 12.0
+radius = 14.0
 
 [node name="Enemy" type="CharacterBody2D"]
 collision_layer = 2
 collision_mask = 49
 script = ExtResource("s_enemy")
-enemy_type = "standard"
+species = "snail"
+metadata/frames_snail = SubResource("SF_snail")
+metadata/frames_hare = SubResource("SF_hare")
+metadata/frames_grotesque = SubResource("SF_grotesque")
+metadata/frames_scribe = SubResource("SF_scribe")
 
 [node name="Sprite" type="AnimatedSprite2D" parent="."]
-sprite_frames = SubResource("SF_standard")
+sprite_frames = SubResource("SF_snail")
 animation = &"idle_SE"
-offset = Vector2(0, -8)
+offset = Vector2(0, -25)
 
 [node name="Hitbox" type="CollisionShape2D" parent="."]
 shape = SubResource("Sh_enemy")
+
 
 [node name="Agent" type="NavigationAgent2D" parent="."]
 radius = 14.0
