@@ -465,6 +465,32 @@ def add_sphere(name, location, radius, material=None, segments=10, rings=6):
     return ob
 
 
+def add_ring(name, location, radius, thickness, height, material=None,
+             verts=48):
+    """
+    A flat annulus - a ring with a genuine hole, not a disc.
+
+    Floor inlay needs this. Faking a ring by stacking a smaller disc on top
+    of a larger one only works for the outermost ring; any ring inside it
+    gets buried by the disc above.
+    """
+    bpy.ops.mesh.primitive_torus_add(
+        location=location,
+        major_radius=radius,
+        minor_radius=thickness * 0.5,
+        major_segments=verts,
+        minor_segments=4,
+    )
+    ob = bpy.context.active_object
+    ob.name = name
+    # Squash the tube flat so it sits in the floor rather than on it.
+    ob.scale = (1.0, 1.0, height / max(thickness, 1e-6))
+    if material:
+        ob.data.materials.append(material)
+    _flat_shade(ob)
+    return ob
+
+
 def add_cone(name, location, radius1, radius2, depth, material=None, verts=8,
              rotation=(0, 0, 0)):
     bpy.ops.mesh.primitive_cone_add(vertices=verts, radius1=radius1,

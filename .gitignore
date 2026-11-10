@@ -12,3 +12,6 @@ export_presets.cfg
 # OS
 .DS_Store
 Thumbs.db
+
+# Intermediate render/convert output
+build/
