@@ -1,0 +1,720 @@
+#!/usr/bin/env python3
+"""
+Generate the Godot scenes from the rendered sprites.
+
+Why a generator instead of hand-written .tscn files: every character needs a
+SpriteFrames resource with eight animations, each pointing at its own PNG.
+That is 8 ExtResource lines and 8 animation dictionaries per character, and
+the moment a sprite is renamed or a tier is added, all of it has to be
+retyped. The generator keeps the scene tree and the sprite set in step.
+
+The generated .tscn files ARE committed - Godot needs them, and they should
+be reviewable in a diff. Re-run this after changing sprite names or sizes:
+
+    python3 pipeline/make_scenes.py
+
+It does not overwrite anything under scripts/.
+"""
+
+import os
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCENES = os.path.join(ROOT, "scenes")
+
+DIRECTIONS = ["SE", "E", "NE", "N", "NW", "W", "SW", "S"]
+
+# --------------------------------------------------------------------------
+# Measurements, taken from the rendered sprites with pipeline/check_anchor.py
+# --------------------------------------------------------------------------
+
+# The anchor sprite is a 128 px frame whose content runs y 9..73, so the
+# character's feet sit 9 px BELOW the frame centre. Godot centres a sprite on
+# its node origin, so the sprite is offset up by that much to put the node
+# origin at the feet. That is what makes a character stand on a tile instead
+# of hovering, and what makes the Y-sort order correct.
+PLAYER_SPRITE_OFFSET_Y = -9
+
+# Hitboxes are deliberately much smaller than the sprites. This is a bullet
+# hell: the GDD's 20 px graze window only means something if the hitbox the
+# player is threading is small and predictable. A hitbox the size of the
+# cloak would make grazing impossible to judge.
+PLAYER_HITBOX_RADIUS = 8
+GRAZE_DISTANCE_PX = 20          # GDD: "within 20 px of the player hitbox"
+
+ENEMY_HITBOX_RADIUS = {"standard": 12, "elite": 15, "boss": 26}
+ENEMY_SPRITE_OFFSET_Y = {"standard": -8, "elite": -10, "boss": -16}
+
+ENEMY_BULLET_RADIUS = 5
+PLAYER_BULLET_RADIUS = 4
+
+# Collision layer bits, matching [layer_names] in project.godot.
+L_PLAYER, L_ENEMY, L_PBULLET, L_EBULLET = 1, 2, 4, 8
+L_ENV, L_WALL, L_GRAZE, L_DOOR = 16, 32, 64, 128
+
+
+def rel(*parts):
+    return "res://" + "/".join(parts)
+
+
+def sprite_frames_block(sub_id, ext_ids, speed=5.0):
+    """A SpriteFrames sub-resource with one looping animation per direction."""
+    anims = []
+    for d in DIRECTIONS:
+        anims.append(
+            '{\n'
+            '"frames": [{\n'
+            '"duration": 1.0,\n'
+            '"texture": ExtResource("%s")\n'
+            '}],\n'
+            '"loop": true,\n'
+            '"name": &"idle_%s",\n'
+            '"speed": %.1f\n'
+            '}' % (ext_ids[d], d, speed)
+        )
+    return (
+        '[sub_resource type="SpriteFrames" id="%s"]\n'
+        'animations = [%s]\n' % (sub_id, ", ".join(anims))
+    )
+
+
+def write(name, text):
+    os.makedirs(SCENES, exist_ok=True)
+    path = os.path.join(SCENES, name)
+    with open(path, "w") as fh:
+        fh.write(text)
+    print("[scenes]", os.path.relpath(path, ROOT))
+
+
+# --------------------------------------------------------------------------
+# Player.tscn
+# --------------------------------------------------------------------------
+
+def make_player():
+    ext = []
+    ext_ids = {}
+    ext.append('[ext_resource type="Script" '
+               'path="res://scripts/Player.gd" id="s_player"]')
+    ext.append('[ext_resource type="Script" '
+               'path="res://scripts/GrazeMeter.gd" id="s_graze"]')
+    ext.append('[ext_resource type="Script" '
+               'path="res://scripts/Shockwave.gd" id="s_shock"]')
+    for i, d in enumerate(DIRECTIONS):
+        rid = "t_%s" % d
+        ext_ids[d] = rid
+        ext.append('[ext_resource type="Texture2D" path="%s" id="%s"]'
+                   % (rel("assets", "sprites", "player",
+                          "player_idle_%s.png" % d), rid))
+
+    subs = [
+        sprite_frames_block("SF_player", ext_ids),
+        '[sub_resource type="CircleShape2D" id="Sh_hit"]\n'
+        'radius = %d.0\n' % PLAYER_HITBOX_RADIUS,
+        # The graze ring is the hitbox radius plus the GDD's 20 px, so the
+        # Area2D's edge is exactly the graze threshold. Daryl's detection can
+        # then use area_entered rather than measuring distances every frame.
+        '[sub_resource type="CircleShape2D" id="Sh_graze"]\n'
+        'radius = %d.0\n' % (PLAYER_HITBOX_RADIUS + GRAZE_DISTANCE_PX),
+    ]
+
+    body = '''
+[node name="Player" type="CharacterBody2D"]
+collision_layer = {L_PLAYER}
+collision_mask = {wall_env}
+script = ExtResource("s_player")
+
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+sprite_frames = SubResource("SF_player")
+animation = &"idle_SE"
+offset = Vector2(0, {off_y})
+
+[node name="Hitbox" type="CollisionShape2D" parent="."]
+shape = SubResource("Sh_hit")
+
+[node name="Muzzle" type="Marker2D" parent="."]
+position = Vector2(10, -14)
+
+[node name="GrazeArea" type="Area2D" parent="."]
+collision_layer = {L_GRAZE}
+collision_mask = {L_EBULLET}
+monitorable = false
+
+[node name="Shape" type="CollisionShape2D" parent="GrazeArea"]
+shape = SubResource("Sh_graze")
+
+[node name="GrazeMeter" type="Node2D" parent="."]
+script = ExtResource("s_graze")
+
+[node name="Shockwave" type="Node2D" parent="."]
+script = ExtResource("s_shock")
+
+[node name="Ring" type="Line2D" parent="Shockwave"]
+visible = false
+width = 3.0
+default_color = Color(1, 0.788235, 0.235294, 1)
+
+[node name="Camera" type="Camera2D" parent="."]
+position_smoothing_enabled = true
+position_smoothing_speed = 8.0
+'''.format(L_PLAYER=L_PLAYER, L_GRAZE=L_GRAZE, L_EBULLET=L_EBULLET,
+           wall_env=L_WALL | L_ENV, off_y=PLAYER_SPRITE_OFFSET_Y)
+
+    steps = len(ext) + len(subs) + 1
+    write("Player.tscn",
+          '[gd_scene load_steps=%d format=3]\n\n' % steps
+          + "\n".join(ext) + "\n\n" + "\n".join(subs) + body)
+
+
+# --------------------------------------------------------------------------
+# Enemy.tscn - one scene, tier set by the exported `enemy_type`
+# --------------------------------------------------------------------------
+
+def make_enemy():
+    """
+    One Enemy.tscn covers all three tiers.
+
+    The alternative - three scenes - would triple the places Jarman has to
+    edit when the AI changes. Instead the tier is an exported field, and
+    RoomManager sets it when spawning. Each tier's SpriteFrames is present in
+    the scene, and _ready picks the right one.
+    """
+    ext = ['[ext_resource type="Script" '
+           'path="res://scripts/Enemy.gd" id="s_enemy"]']
+    subs = []
+    for tier in ("standard", "elite", "boss"):
+        ids = {}
+        for d in DIRECTIONS:
+            rid = "t_%s_%s" % (tier, d)
+            ids[d] = rid
+            ext.append('[ext_resource type="Texture2D" path="%s" id="%s"]'
+                       % (rel("assets", "sprites", "enemy",
+                              "enemy_%s_idle_%s.png" % (tier, d)), rid))
+        subs.append(sprite_frames_block("SF_%s" % tier, ids))
+
+    subs.append('[sub_resource type="CircleShape2D" id="Sh_enemy"]\n'
+                'radius = %d.0\n' % ENEMY_HITBOX_RADIUS["standard"])
+
+    body = '''
+[node name="Enemy" type="CharacterBody2D"]
+collision_layer = {L_ENEMY}
+collision_mask = {mask}
+script = ExtResource("s_enemy")
+enemy_type = "standard"
+
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+sprite_frames = SubResource("SF_standard")
+animation = &"idle_SE"
+offset = Vector2(0, {off_y})
+
+[node name="Hitbox" type="CollisionShape2D" parent="."]
+shape = SubResource("Sh_enemy")
+
+[node name="Agent" type="NavigationAgent2D" parent="."]
+radius = 14.0
+path_desired_distance = 8.0
+target_desired_distance = 8.0
+avoidance_enabled = true
+'''.format(L_ENEMY=L_ENEMY, mask=L_WALL | L_ENV | L_PLAYER,
+           off_y=ENEMY_SPRITE_OFFSET_Y["standard"])
+
+    steps = len(ext) + len(subs) + 1
+    write("Enemy.tscn",
+          '[gd_scene load_steps=%d format=3]\n\n' % steps
+          + "\n".join(ext) + "\n\n" + "\n".join(subs) + body)
+
+
+# --------------------------------------------------------------------------
+# Bullets
+# --------------------------------------------------------------------------
+
+def make_bullets():
+    write("EnemyBullet.tscn", '''[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/EnemyBullet.gd" id="s_b"]
+[ext_resource type="Texture2D" path="{tex}" id="t_b"]
+
+[sub_resource type="CircleShape2D" id="Sh_b"]
+radius = {r}.0
+
+[node name="EnemyBullet" type="Area2D"]
+collision_layer = {layer}
+collision_mask = {mask}
+script = ExtResource("s_b")
+
+[node name="Sprite" type="Sprite2D" parent="."]
+texture = ExtResource("t_b")
+
+[node name="Shape" type="CollisionShape2D" parent="."]
+shape = SubResource("Sh_b")
+
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]
+'''.format(tex=rel("assets", "sprites", "props", "bullet_enemy.png"),
+           r=ENEMY_BULLET_RADIUS, layer=L_EBULLET,
+           mask=L_PLAYER | L_WALL | L_ENV))
+
+    write("PlayerBullet.tscn", '''[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Texture2D" path="{tex}" id="t_b"]
+
+[sub_resource type="CircleShape2D" id="Sh_b"]
+radius = {r}.0
+
+[node name="PlayerBullet" type="Area2D"]
+collision_layer = {layer}
+collision_mask = {mask}
+
+[node name="Sprite" type="Sprite2D" parent="."]
+texture = ExtResource("t_b")
+
+[node name="Shape" type="CollisionShape2D" parent="."]
+shape = SubResource("Sh_b")
+'''.format(tex=rel("assets", "sprites", "props", "bullet_player.png"),
+           r=PLAYER_BULLET_RADIUS, layer=L_PBULLET,
+           mask=L_ENEMY | L_WALL | L_ENV))
+
+
+# --------------------------------------------------------------------------
+# Environmental objects
+# --------------------------------------------------------------------------
+
+def make_env_objects():
+    """
+    Barrel, Cover and Trap share EnvObject.gd and differ by `kind` plus the
+    textures they carry as metadata. EnvObject._refresh_visual() looks the
+    textures up by name, so the script never hard-codes an asset path and
+    adding a damage stage is a scene edit, not a code edit.
+    """
+    def scene(name, kind_value, shape, textures, layer, mask, extra=""):
+        ext = ['[ext_resource type="Script" '
+               'path="res://scripts/EnvObject.gd" id="s_env"]']
+        meta = []
+        for i, (key, path) in enumerate(textures):
+            rid = "t_%d" % i
+            ext.append('[ext_resource type="Texture2D" path="%s" id="%s"]'
+                       % (path, rid))
+            meta.append('metadata/%s = ExtResource("%s")' % (key, rid))
+        steps = len(ext) + 2
+        return ('[gd_scene load_steps=%d format=3]\n\n' % steps
+                + "\n".join(ext) + "\n\n" + shape
+                + '\n[node name="%s" type="StaticBody2D"]\n'
+                  'collision_layer = %d\ncollision_mask = %d\n'
+                  'script = ExtResource("s_env")\nkind = %d\n'
+                  % (name, layer, mask, kind_value)
+                + '\n[node name="Sprite" type="Sprite2D" parent="."]\n'
+                + 'texture = ExtResource("t_0")\n'
+                + "\n".join(meta) + "\n"
+                + '\n[node name="Shape" type="CollisionShape2D" parent="."]\n'
+                  'shape = SubResource("Sh")\n'
+                + extra)
+
+    p = lambda n: rel("assets", "sprites", "props", n)
+
+    write("Barrel.tscn", scene(
+        "Barrel", 0,
+        '[sub_resource type="CircleShape2D" id="Sh"]\nradius = 11.0\n',
+        [("texture_barrel", p("barrel.png"))],
+        L_ENV, L_PLAYER | L_ENEMY | L_PBULLET | L_EBULLET))
+
+    write("Cover.tscn", scene(
+        "Cover", 1,
+        '[sub_resource type="RectangleShape2D" id="Sh"]\n'
+        'size = Vector2(48, 20)\n',
+        [("texture_intact", p("cover_intact.png")),
+         ("texture_cracked", p("cover_cracked.png")),
+         ("texture_crumbling", p("cover_crumbling.png"))],
+        L_ENV, L_PLAYER | L_ENEMY | L_PBULLET | L_EBULLET))
+
+    # A trap is walked ONTO, not collided with, so its root sits on NO
+    # physics layer - otherwise the player and every enemy would be stopped
+    # dead by a flat floor plate. Detection is the child Area2D instead.
+    # The root stays a StaticBody2D so one script still covers all three
+    # kinds; EnvObject._ready() puts it in the "env_object" and "hazard"
+    # groups, which is how other systems find it, so it loses nothing by
+    # being off the physics layers.
+    write("Trap.tscn", scene(
+        "Trap", 2,
+        '[sub_resource type="RectangleShape2D" id="Sh"]\n'
+        'size = Vector2(40, 40)\n',
+        [("texture_armed", p("trap_armed.png")),
+         ("texture_disarmed", p("trap_disarmed.png"))],
+        0, 0,
+        extra='\n[node name="Trigger" type="Area2D" parent="."]\n'
+              'collision_layer = 0\ncollision_mask = %d\n'
+              '\n[node name="Shape" type="CollisionShape2D" parent="Trigger"]\n'
+              'shape = SubResource("Sh")\n'
+              '\n[connection signal="body_entered" from="Trigger" to="." '
+              'method="_on_body_entered"]\n' % (L_PLAYER | L_ENEMY)))
+
+
+# --------------------------------------------------------------------------
+# TileSet and Room
+# --------------------------------------------------------------------------
+
+def make_tileset():
+    """
+    One atlas source per tile PNG.
+
+    The tiles are rendered as separate files rather than packed into one
+    atlas image, because packing would need an image library the pipeline
+    does not have and gains nothing at this tile count.
+    """
+    ext, sources, entries = [], [], []
+    tiles = [("floor_0", 0), ("floor_1", 1), ("floor_2", 2), ("floor_3", 3),
+             ("wall", 4)]
+    for name, idx in tiles:
+        rid = "t_%s" % name
+        ext.append('[ext_resource type="Texture2D" path="%s" id="%s"]'
+                   % (rel("assets", "sprites", "tiles", "%s.png" % name), rid))
+        # Walls render in a 128 px frame (two tiles tall) so the block's
+        # height is not cropped; floors are exactly one 64 px tile.
+        region = "Vector2i(64, 128)" if name == "wall" else "Vector2i(64, 64)"
+        src = ('[sub_resource type="TileSetAtlasSource" id="A_%s"]\n'
+               'texture = ExtResource("%s")\n'
+               'texture_region_size = %s\n'
+               '0:0/0 = 0\n' % (name, rid, region))
+        # Walls block movement and bullets, so they get a physics polygon.
+        if name == "wall":
+            src += ('0:0/0/physics_layer_0/polygon_0/points = '
+                    'PackedVector2Array(-32, 0, 32, 0, 32, 64, -32, 64)\n')
+        sources.append(src)
+        entries.append('sources/%d = SubResource("A_%s")' % (idx, name))
+
+    steps = len(ext) + len(sources) + 1
+    body = ('\n[resource]\n'
+            'physics_layer_0/collision_layer = %d\n' % L_WALL
+            + "\n".join(entries) + "\n")
+    path = os.path.join(ROOT, "assets", "RoomTileSet.tres")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as fh:
+        fh.write('[gd_resource type="TileSet" load_steps=%d format=3]\n\n'
+                 % steps
+                 + "\n".join(ext) + "\n\n" + "\n".join(sources) + body)
+    print("[scenes]", os.path.relpath(path, ROOT))
+
+
+def make_room():
+    """
+    Room.tscn - one hand-built layout, which is layout #1 of the 10 the GDD
+    asks for. A simple rectangular arena with a wall border, four doors, six
+    enemy spawn markers and five object markers.
+
+    GDD: "Layouts: Drawn at random from a pool of 10 hand-built layouts ...
+    objects placed on 3-6 spawn markers per layout". This scene is the
+    template the other nine get built from - duplicate it, move the markers,
+    change the walls.
+    """
+    # A 24 x 14 tile arena at 64 px per tile = 1536 x 896 px.
+    w, h, t = 24, 14, 64
+    floor_cells, wall_cells = [], []
+    for y in range(h):
+        for x in range(w):
+            if x in (0, w - 1) or y in (0, h - 1):
+                # source id 4 = wall
+                wall_cells += [x, y, 4, 0, 0]
+            else:
+                # Rotate through the four floor variants so the grid does not
+                # show an obvious repeat.
+                src = (x * 7 + y * 3) % 4
+                floor_cells += [x, y, src, 0, 0]
+
+    def pack(cells):
+        return "PackedInt32Array(%s)" % ", ".join(str(c) for c in cells)
+
+    # Spawn markers, kept away from the walls and spread so that the GDD's
+    # "at least 200 px from the player" is satisfiable wherever the player is.
+    spawns = [(4, 3), (12, 2), (19, 3), (4, 10), (12, 11), (19, 10)]
+    objects = [(8, 5), (15, 5), (11, 8), (6, 8), (17, 9)]
+
+    nodes = []
+    for i, (x, y) in enumerate(spawns):
+        nodes.append('[node name="Spawn%d" type="Marker2D" '
+                     'parent="SpawnMarkers"]\nposition = Vector2(%d, %d)\n'
+                     % (i, x * t + t // 2, y * t + t // 2))
+    for i, (x, y) in enumerate(objects):
+        nodes.append('[node name="ObjSpot%d" type="Marker2D" '
+                     'parent="ObjectMarkers"]\nposition = Vector2(%d, %d)\n'
+                     % (i, x * t + t // 2, y * t + t // 2))
+
+    # Four doors, centred on each wall.
+    doors = [("North", w // 2 * t, 0), ("South", w // 2 * t, (h - 1) * t),
+             ("West", 0, h // 2 * t), ("East", (w - 1) * t, h // 2 * t)]
+    for name, x, y in doors:
+        nodes.append('[node name="Door%s" type="Sprite2D" parent="Doors"]\n'
+                     'position = Vector2(%d, %d)\n'
+                     'texture = ExtResource("t_door_locked")\n'
+                     'metadata/locked_texture = ExtResource("t_door_locked")\n'
+                     'metadata/open_texture = ExtResource("t_door_open")\n'
+                     % (name, x + t // 2, y + t // 2))
+
+    write("Room.tscn", '''[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/RoomManager.gd" id="s_room"]
+[ext_resource type="TileSet" path="res://assets/RoomTileSet.tres" id="ts"]
+[ext_resource type="Texture2D" path="{d_locked}" id="t_door_locked"]
+[ext_resource type="Texture2D" path="{d_open}" id="t_door_open"]
+
+[node name="Room" type="Node2D"]
+script = ExtResource("s_room")
+
+[node name="FloorLayer" type="TileMapLayer" parent="."]
+tile_set = ExtResource("ts")
+tile_map_data = {floor_data}
+
+[node name="WallLayer" type="TileMapLayer" parent="."]
+tile_set = ExtResource("ts")
+tile_map_data = {wall_data}
+
+[node name="NavRegion" type="NavigationRegion2D" parent="."]
+
+[node name="Doors" type="Node2D" parent="."]
+
+[node name="SpawnMarkers" type="Node2D" parent="."]
+
+[node name="ObjectMarkers" type="Node2D" parent="."]
+
+[node name="Enemies" type="Node2D" parent="."]
+y_sort_enabled = true
+
+[node name="Objects" type="Node2D" parent="."]
+y_sort_enabled = true
+
+{nodes}
+'''.format(d_locked=rel("assets", "sprites", "tiles", "door_locked.png"),
+           d_open=rel("assets", "sprites", "tiles", "door_open.png"),
+           floor_data=pack(floor_cells), wall_data=pack(wall_cells),
+           nodes="\n".join(nodes)))
+
+
+# --------------------------------------------------------------------------
+# HUD and Main
+# --------------------------------------------------------------------------
+
+def make_hud():
+    """
+    The HUD, pinned to the screen edges.
+
+    Nothing sits in the middle: the avoid list bans anything that hides
+    bullets or the player hitbox, and in a bullet hell the centre of the
+    screen is where the player is looking.
+
+      top-left      HP bar, and the damage-boost timer under it
+      top-right     room counter
+      bottom-centre Graze Meter, with the Shockwave prompt above it
+    """
+    def bar_style(sid, colour, bg=False):
+        return ('[sub_resource type="StyleBoxFlat" id="%s"]\n'
+                'bg_color = %s\n'
+                'corner_radius_top_left = 2\ncorner_radius_top_right = 2\n'
+                'corner_radius_bottom_right = 2\n'
+                'corner_radius_bottom_left = 2\n'
+                % (sid, colour)
+                + ('border_width_left = 2\nborder_width_top = 2\n'
+                   'border_width_right = 2\nborder_width_bottom = 2\n'
+                   'border_color = Color(0.070588, 0.054902, 0.101961, 1)\n'
+                   if bg else ''))
+
+    ABYSS = "Color(0.070588, 0.054902, 0.101961, 0.85)"
+    EMBER = "Color(0.941176, 0.415686, 0.164706, 1)"
+    GOLD = "Color(1, 0.788235, 0.235294, 1)"
+    TEAL = "Color(0.207843, 0.839216, 0.768627, 1)"
+    BONE = "Color(0.847059, 0.784314, 0.658824, 1)"
+
+    subs = (bar_style("Sb_bg", ABYSS, bg=True)
+            + bar_style("Sb_hp", EMBER)
+            + bar_style("Sb_meter", GOLD)
+            + bar_style("Sb_boost", TEAL)
+            + '[sub_resource type="StyleBoxFlat" id="Sb_panel"]\n'
+              'bg_color = Color(0.070588, 0.054902, 0.101961, 0.94)\n'
+              'border_width_left = 3\nborder_width_top = 3\n'
+              'border_width_right = 3\nborder_width_bottom = 3\n'
+              'border_color = %s\n'
+              'corner_radius_top_left = 4\ncorner_radius_top_right = 4\n'
+              'corner_radius_bottom_right = 4\n'
+              'corner_radius_bottom_left = 4\n' % BONE)
+
+    write("HUD.tscn", '''[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/HUD.gd" id="s_hud"]
+
+{subs}
+[node name="HUD" type="CanvasLayer"]
+script = ExtResource("s_hud")
+
+[node name="Root" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="TopLeft" type="VBoxContainer" parent="Root"]
+offset_left = 24.0
+offset_top = 20.0
+offset_right = 324.0
+offset_bottom = 92.0
+theme_override_constants/separation = 6
+
+[node name="HPBar" type="ProgressBar" parent="Root/TopLeft"]
+custom_minimum_size = Vector2(300, 26)
+max_value = 100.0
+value = 100.0
+show_percentage = false
+theme_override_styles/background = SubResource("Sb_bg")
+theme_override_styles/fill = SubResource("Sb_hp")
+
+[node name="HPLabel" type="Label" parent="Root/TopLeft/HPBar"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+text = "100 / 100"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = {BONE}
+theme_override_font_sizes/font_size = 14
+
+[node name="BoostBar" type="ProgressBar" parent="Root/TopLeft"]
+visible = false
+custom_minimum_size = Vector2(220, 16)
+max_value = 10.0
+value = 0.0
+show_percentage = false
+theme_override_styles/background = SubResource("Sb_bg")
+theme_override_styles/fill = SubResource("Sb_boost")
+
+[node name="BoostLabel" type="Label" parent="Root/TopLeft/BoostBar"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+text = "+20%  10.0s"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = {BONE}
+theme_override_font_sizes/font_size = 11
+
+[node name="TopRight" type="VBoxContainer" parent="Root"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -260.0
+offset_top = 20.0
+offset_right = -24.0
+offset_bottom = 52.0
+alignment = 2
+
+[node name="RoomLabel" type="Label" parent="Root/TopRight"]
+text = "ROOM  1 / 8"
+horizontal_alignment = 2
+theme_override_colors/font_color = {BONE}
+theme_override_font_sizes/font_size = 18
+
+[node name="BottomCentre" type="VBoxContainer" parent="Root"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -210.0
+offset_top = -78.0
+offset_right = 210.0
+offset_bottom = -22.0
+theme_override_constants/separation = 6
+
+[node name="ShockwaveHint" type="Label" parent="Root/BottomCentre"]
+visible = false
+text = "SHOCKWAVE READY  -  press Q"
+horizontal_alignment = 1
+theme_override_colors/font_color = {GOLD}
+theme_override_font_sizes/font_size = 15
+
+[node name="MeterBar" type="ProgressBar" parent="Root/BottomCentre"]
+custom_minimum_size = Vector2(420, 22)
+max_value = 100.0
+value = 0.0
+show_percentage = false
+theme_override_styles/background = SubResource("Sb_bg")
+theme_override_styles/fill = SubResource("Sb_meter")
+
+[node name="MeterLabel" type="Label" parent="Root/BottomCentre/MeterBar"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+text = "GRAZE  0 / 100"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = {BONE}
+theme_override_font_sizes/font_size = 13
+
+[node name="EndScreen" type="Control" parent="Root"]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 0
+
+[node name="Panel" type="PanelContainer" parent="Root/EndScreen"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -110.0
+offset_right = 220.0
+offset_bottom = 110.0
+theme_override_styles/panel = SubResource("Sb_panel")
+
+[node name="VBox" type="VBoxContainer" parent="Root/EndScreen/Panel"]
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="Root/EndScreen/Panel/VBox"]
+text = "RUN OVER"
+horizontal_alignment = 1
+theme_override_colors/font_color = {GOLD}
+theme_override_font_sizes/font_size = 34
+
+[node name="Subtitle" type="Label" parent="Root/EndScreen/Panel/VBox"]
+text = "Restarting at room 1 with new layouts."
+horizontal_alignment = 1
+autowrap_mode = 2
+theme_override_colors/font_color = {BONE}
+theme_override_font_sizes/font_size = 15
+
+[node name="RestartButton" type="Button" parent="Root/EndScreen/Panel/VBox"]
+custom_minimum_size = Vector2(0, 44)
+text = "RUN AGAIN"
+'''.format(subs=subs, BONE=BONE, GOLD=GOLD))
+
+
+def make_main():
+    write("Main.tscn", '''[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/GameManager.gd" id="s_gm"]
+[ext_resource type="PackedScene" path="res://scenes/Room.tscn" id="sc_room"]
+[ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="sc_player"]
+[ext_resource type="PackedScene" path="res://scenes/HUD.tscn" id="sc_hud"]
+
+[node name="Main" type="Node2D"]
+y_sort_enabled = true
+script = ExtResource("s_gm")
+
+[node name="Room" parent="." instance=ExtResource("sc_room")]
+
+[node name="Player" parent="." instance=ExtResource("sc_player")]
+position = Vector2(768, 448)
+
+[node name="HUD" parent="." instance=ExtResource("sc_hud")]
+''')
+
+
+def main():
+    make_player()
+    make_enemy()
+    make_bullets()
+    make_env_objects()
+    make_tileset()
+    make_room()
+    make_hud()
+    make_main()
+    print("\nScenes generated. Open project.godot in Godot 4.4+.")
+
+
+if __name__ == "__main__":
+    main()

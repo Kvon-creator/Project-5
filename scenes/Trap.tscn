@@ -1,0 +1,31 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/EnvObject.gd" id="s_env"]
+[ext_resource type="Texture2D" path="res://assets/sprites/props/trap_armed.png" id="t_0"]
+[ext_resource type="Texture2D" path="res://assets/sprites/props/trap_disarmed.png" id="t_1"]
+
+[sub_resource type="RectangleShape2D" id="Sh"]
+size = Vector2(40, 40)
+
+[node name="Trap" type="StaticBody2D"]
+collision_layer = 0
+collision_mask = 0
+script = ExtResource("s_env")
+kind = 2
+
+[node name="Sprite" type="Sprite2D" parent="."]
+texture = ExtResource("t_0")
+metadata/texture_armed = ExtResource("t_0")
+metadata/texture_disarmed = ExtResource("t_1")
+
+[node name="Shape" type="CollisionShape2D" parent="."]
+shape = SubResource("Sh")
+
+[node name="Trigger" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 3
+
+[node name="Shape" type="CollisionShape2D" parent="Trigger"]
+shape = SubResource("Sh")
+
+[connection signal="body_entered" from="Trigger" to="." method="_on_body_entered"]

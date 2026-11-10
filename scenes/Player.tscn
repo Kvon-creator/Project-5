@@ -1,0 +1,125 @@
+[gd_scene load_steps=15 format=3]
+
+[ext_resource type="Script" path="res://scripts/Player.gd" id="s_player"]
+[ext_resource type="Script" path="res://scripts/GrazeMeter.gd" id="s_graze"]
+[ext_resource type="Script" path="res://scripts/Shockwave.gd" id="s_shock"]
+[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_SE.png" id="t_SE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_E.png" id="t_E"]
+[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_NE.png" id="t_NE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_N.png" id="t_N"]
+[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_NW.png" id="t_NW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_W.png" id="t_W"]
+[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_SW.png" id="t_SW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_S.png" id="t_S"]
+
+[sub_resource type="SpriteFrames" id="SF_player"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_SE")
+}],
+"loop": true,
+"name": &"idle_SE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_E")
+}],
+"loop": true,
+"name": &"idle_E",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_NE")
+}],
+"loop": true,
+"name": &"idle_NE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_N")
+}],
+"loop": true,
+"name": &"idle_N",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_NW")
+}],
+"loop": true,
+"name": &"idle_NW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_W")
+}],
+"loop": true,
+"name": &"idle_W",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_SW")
+}],
+"loop": true,
+"name": &"idle_SW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_S")
+}],
+"loop": true,
+"name": &"idle_S",
+"speed": 5.0
+}]
+
+[sub_resource type="CircleShape2D" id="Sh_hit"]
+radius = 8.0
+
+[sub_resource type="CircleShape2D" id="Sh_graze"]
+radius = 28.0
+
+[node name="Player" type="CharacterBody2D"]
+collision_layer = 1
+collision_mask = 48
+script = ExtResource("s_player")
+
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+sprite_frames = SubResource("SF_player")
+animation = &"idle_SE"
+offset = Vector2(0, -9)
+
+[node name="Hitbox" type="CollisionShape2D" parent="."]
+shape = SubResource("Sh_hit")
+
+[node name="Muzzle" type="Marker2D" parent="."]
+position = Vector2(10, -14)
+
+[node name="GrazeArea" type="Area2D" parent="."]
+collision_layer = 64
+collision_mask = 8
+monitorable = false
+
+[node name="Shape" type="CollisionShape2D" parent="GrazeArea"]
+shape = SubResource("Sh_graze")
+
+[node name="GrazeMeter" type="Node2D" parent="."]
+script = ExtResource("s_graze")
+
+[node name="Shockwave" type="Node2D" parent="."]
+script = ExtResource("s_shock")
+
+[node name="Ring" type="Line2D" parent="Shockwave"]
+visible = false
+width = 3.0
+default_color = Color(1, 0.788235, 0.235294, 1)
+
+[node name="Camera" type="Camera2D" parent="."]
+position_smoothing_enabled = true
+position_smoothing_speed = 8.0

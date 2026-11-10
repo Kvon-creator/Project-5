@@ -1,0 +1,41 @@
+[gd_resource type="TileSet" load_steps=11 format=3]
+
+[ext_resource type="Texture2D" path="res://assets/sprites/tiles/floor_0.png" id="t_floor_0"]
+[ext_resource type="Texture2D" path="res://assets/sprites/tiles/floor_1.png" id="t_floor_1"]
+[ext_resource type="Texture2D" path="res://assets/sprites/tiles/floor_2.png" id="t_floor_2"]
+[ext_resource type="Texture2D" path="res://assets/sprites/tiles/floor_3.png" id="t_floor_3"]
+[ext_resource type="Texture2D" path="res://assets/sprites/tiles/wall.png" id="t_wall"]
+
+[sub_resource type="TileSetAtlasSource" id="A_floor_0"]
+texture = ExtResource("t_floor_0")
+texture_region_size = Vector2i(64, 64)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="A_floor_1"]
+texture = ExtResource("t_floor_1")
+texture_region_size = Vector2i(64, 64)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="A_floor_2"]
+texture = ExtResource("t_floor_2")
+texture_region_size = Vector2i(64, 64)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="A_floor_3"]
+texture = ExtResource("t_floor_3")
+texture_region_size = Vector2i(64, 64)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="A_wall"]
+texture = ExtResource("t_wall")
+texture_region_size = Vector2i(64, 128)
+0:0/0 = 0
+0:0/0/physics_layer_0/polygon_0/points = PackedVector2Array(-32, 0, 32, 0, 32, 64, -32, 64)
+
+[resource]
+physics_layer_0/collision_layer = 32
+sources/0 = SubResource("A_floor_0")
+sources/1 = SubResource("A_floor_1")
+sources/2 = SubResource("A_floor_2")
+sources/3 = SubResource("A_floor_3")
+sources/4 = SubResource("A_wall")

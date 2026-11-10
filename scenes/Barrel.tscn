@@ -1,0 +1,20 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/EnvObject.gd" id="s_env"]
+[ext_resource type="Texture2D" path="res://assets/sprites/props/barrel.png" id="t_0"]
+
+[sub_resource type="CircleShape2D" id="Sh"]
+radius = 11.0
+
+[node name="Barrel" type="StaticBody2D"]
+collision_layer = 16
+collision_mask = 15
+script = ExtResource("s_env")
+kind = 0
+
+[node name="Sprite" type="Sprite2D" parent="."]
+texture = ExtResource("t_0")
+metadata/texture_barrel = ExtResource("t_0")
+
+[node name="Shape" type="CollisionShape2D" parent="."]
+shape = SubResource("Sh")

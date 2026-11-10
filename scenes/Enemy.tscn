@@ -1,0 +1,251 @@
+[gd_scene load_steps=30 format=3]
+
+[ext_resource type="Script" path="res://scripts/Enemy.gd" id="s_enemy"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_SE.png" id="t_standard_SE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_E.png" id="t_standard_E"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_NE.png" id="t_standard_NE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_N.png" id="t_standard_N"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_NW.png" id="t_standard_NW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_W.png" id="t_standard_W"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_SW.png" id="t_standard_SW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_standard_idle_S.png" id="t_standard_S"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_SE.png" id="t_elite_SE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_E.png" id="t_elite_E"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_NE.png" id="t_elite_NE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_N.png" id="t_elite_N"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_NW.png" id="t_elite_NW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_W.png" id="t_elite_W"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_SW.png" id="t_elite_SW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_elite_idle_S.png" id="t_elite_S"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_SE.png" id="t_boss_SE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_E.png" id="t_boss_E"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_NE.png" id="t_boss_NE"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_N.png" id="t_boss_N"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_NW.png" id="t_boss_NW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_W.png" id="t_boss_W"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_SW.png" id="t_boss_SW"]
+[ext_resource type="Texture2D" path="res://assets/sprites/enemy/enemy_boss_idle_S.png" id="t_boss_S"]
+
+[sub_resource type="SpriteFrames" id="SF_standard"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_standard_SE")
+}],
+"loop": true,
+"name": &"idle_SE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_standard_E")
+}],
+"loop": true,
+"name": &"idle_E",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_standard_NE")
+}],
+"loop": true,
+"name": &"idle_NE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_standard_N")
+}],
+"loop": true,
+"name": &"idle_N",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_standard_NW")
+}],
+"loop": true,
+"name": &"idle_NW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_standard_W")
+}],
+"loop": true,
+"name": &"idle_W",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_standard_SW")
+}],
+"loop": true,
+"name": &"idle_SW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_standard_S")
+}],
+"loop": true,
+"name": &"idle_S",
+"speed": 5.0
+}]
+
+[sub_resource type="SpriteFrames" id="SF_elite"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_elite_SE")
+}],
+"loop": true,
+"name": &"idle_SE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_elite_E")
+}],
+"loop": true,
+"name": &"idle_E",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_elite_NE")
+}],
+"loop": true,
+"name": &"idle_NE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_elite_N")
+}],
+"loop": true,
+"name": &"idle_N",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_elite_NW")
+}],
+"loop": true,
+"name": &"idle_NW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_elite_W")
+}],
+"loop": true,
+"name": &"idle_W",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_elite_SW")
+}],
+"loop": true,
+"name": &"idle_SW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_elite_S")
+}],
+"loop": true,
+"name": &"idle_S",
+"speed": 5.0
+}]
+
+[sub_resource type="SpriteFrames" id="SF_boss"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_boss_SE")
+}],
+"loop": true,
+"name": &"idle_SE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_boss_E")
+}],
+"loop": true,
+"name": &"idle_E",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_boss_NE")
+}],
+"loop": true,
+"name": &"idle_NE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_boss_N")
+}],
+"loop": true,
+"name": &"idle_N",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_boss_NW")
+}],
+"loop": true,
+"name": &"idle_NW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_boss_W")
+}],
+"loop": true,
+"name": &"idle_W",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_boss_SW")
+}],
+"loop": true,
+"name": &"idle_SW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_boss_S")
+}],
+"loop": true,
+"name": &"idle_S",
+"speed": 5.0
+}]
+
+[sub_resource type="CircleShape2D" id="Sh_enemy"]
+radius = 12.0
+
+[node name="Enemy" type="CharacterBody2D"]
+collision_layer = 2
+collision_mask = 49
+script = ExtResource("s_enemy")
+enemy_type = "standard"
+
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+sprite_frames = SubResource("SF_standard")
+animation = &"idle_SE"
+offset = Vector2(0, -8)
+
+[node name="Hitbox" type="CollisionShape2D" parent="."]
+shape = SubResource("Sh_enemy")
+
+[node name="Agent" type="NavigationAgent2D" parent="."]
+radius = 14.0
+path_desired_distance = 8.0
+target_desired_distance = 8.0
+avoidance_enabled = true
