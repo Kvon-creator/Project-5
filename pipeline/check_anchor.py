@@ -32,15 +32,25 @@ import zlib
 # --------------------------------------------------------------------------
 
 PALETTE = {
-    "120E1A": "Abyss (void/bg/ink)",
-    "2B2335": "Crypt Stone (floor)",
-    "4E4458": "Stone Light (walls/cover)",
-    "D8C8A8": "Bone (UI text/highlights)",
-    "F06A2A": "Ember (player/barrels/fire)",
-    "8E2A2A": "Blood Rust (traps/damage)",
-    "FFC93C": "Graze Gold (meter/sparks)",
-    "35D6C4": "Spirit Teal (player shots)",
+    # Kept in step with scripts/Palette.gd and pipeline/rig_common.py -
+    # the MEASURED palette from docs/reference, not the original GDD table.
+    "35D6C4": "Nib Teal (player shots/pickup)",
     "FF2E6E": "Hostile Magenta (enemy bullets ONLY)",
+    "F06A2A": "Ember (plume/flame/barrel)",
+    "FFC93C": "Graze Gold (meter/sparks)",
+    "E2C5A8": "Parchment (paper/cape/UI)",
+    "BE9E91": "Candle Warm (lit stone)",
+    "8A8088": "Stone Lit (floor)",
+    "776B70": "Stone Mid (walls)",
+    "554F59": "Stone Shadow",
+    "3C2C39": "Ink Violet (deep shadow)",
+    "18030A": "Ink Black (pools/outlines)",
+    "C8A24E": "Gilt (vine work)",
+    "886181": "Creature Violet (enemy flesh)",
+    "BA7977": "Creature Rust (enemy hide)",
+    "421C39": "Deep Plum (enemy shadow)",
+    "868178": "Steel (hero armour)",
+    "8E2A2A": "Blood Rust (traps/damage)",
 }
 
 # The anchor spec: "about 64 px tall in a 128 x 128 frame".
