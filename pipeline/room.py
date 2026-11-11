@@ -359,7 +359,7 @@ def wall_door(parts, tag, frame, u, materials):
             n=0.31)
 
 
-def build_walls(parts):
+def build_walls(parts, vine_objects):
     m = {
         "stone": mat("WallStone", STONE_MID, shadow=0.52, light=0.52,
                      warm=FLAME_GLOW, cool=COLD_SHADOW, grain=0.16,
@@ -424,10 +424,31 @@ def build_walls(parts):
             spots = [(-0.34, 0.62), (-0.34, 0.33), (-0.20, 0.76),
                      (0.20, 0.76), (0.34, 0.62), (0.34, 0.33),
                      (-0.42, 0.45), (0.42, 0.45)]
+        # Vine is built into its own list and JOINED into one mesh per wall.
+        #
+        # Freestyle outlines every object, so a wall's worth of vine built
+        # from hundreds of separate beads and leaves gets hundreds of
+        # contours. With the calligraphic ink enabled those thickened lines
+        # swallowed the gold entirely and the scrollwork rendered as a dark
+        # scribble. Joined, the wall's vine takes a single outline and stays
+        # gold - and the render is far cheaper.
+        vine_parts = []
         for i, (u, v) in enumerate(spots):
-            vine_cluster(parts, f"V{side}{i}", frame, u, v,
+            vine_cluster(vine_parts, f"V{side}{i}", frame, u, v,
                          scale=WALL_H * 0.30, material=m["gilt"],
                          flip=(i % 2 == 1))
+        if vine_parts:
+            # NOT appended to `parts`: the vine is collected separately so it
+            # can be excluded from the ink pass.
+            #
+            # Gilt inlay laid into stone reads as gold leaf, not as an
+            # outlined object - and the vine is built from so many small
+            # beads and leaves that any contour on them, thickened by the
+            # calligraphic ink, swallows the gold and leaves a dark scribble.
+            # Joining them into one mesh did not help, because interpenetrating
+            # primitives still turn away from view internally and each of
+            # those boundaries is its own silhouette.
+            vine_objects.append(rig.join_parts(vine_parts, f"Vine{side}"))
 
     return frames
 
@@ -650,7 +671,7 @@ def setup_room_render():
     # weight lines turns into a colouring book.
     scene.render.use_freestyle = True
     scene.render.line_thickness_mode = "ABSOLUTE"
-    scene.render.line_thickness = 0.85
+    scene.render.line_thickness = 1.0
     vl = scene.view_layers[0]
     vl.use_freestyle = True
     fs = vl.freestyle_settings
@@ -662,7 +683,11 @@ def setup_room_render():
     ls.select_crease = True
     ls.select_material_boundary = True
     ls.linestyle.color = rig.hex_to_rgba(INK_BLACK)[:3]
-    ls.linestyle.thickness = 0.85
+    ls.linestyle.thickness = 1.0
+    # The room renders at 1152 px, big enough for line weight to read, so it
+    # opts into the calligraphic/wobbly ink that would blot a 64 px sprite.
+    rig.set_ink(crease=True, material_boundary=True, thickness=1.0,
+                hand_drawn=True, calligraphy=0.35, wobble=0.35)
 
     # Camera
     cam_data = bpy.data.cameras.new("RoomCam")
@@ -793,13 +818,14 @@ def main():
 
     parts = []
     build_floor(parts)
-    build_walls(parts)
+    vine_objects = []
+    build_walls(parts, vine_objects)
     build_dressing(parts)
 
     # Light-shaft sheets go in the collection Freestyle skips, so the beam
     # has no ink contour around it.
     no_ink = rig.no_ink_collection()
-    for ob in build_light_shaft():
+    for ob in vine_objects + build_light_shaft():
         for c in list(ob.users_collection):
             c.objects.unlink(ob)
         no_ink.objects.link(ob)

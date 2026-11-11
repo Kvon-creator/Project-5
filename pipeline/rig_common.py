@@ -313,7 +313,8 @@ def _setup_freestyle() -> None:
 
 
 def set_ink(crease=True, material_boundary=True, thickness=None,
-            silhouette=True, border=True):
+            silhouette=True, border=True, hand_drawn=False,
+            calligraphy=0.35, wobble=0.35):
     """
     Tune the Freestyle line work after setup_render().
 
@@ -326,6 +327,25 @@ def set_ink(crease=True, material_boundary=True, thickness=None,
 
     So characters use crease=False (outline and colour boundaries only) and
     rooms leave it on.
+
+    `hand_drawn` adds the modifiers that separate an INKED line from a
+    traced one:
+
+      calligraphy - thickness varies with the line's direction, the way a
+                    chisel nib lays down a wide stroke one way and a thin
+                    one across it. A line of constant width is the clearest
+                    tell that a contour was computed.
+      wobble      - a little Perlin displacement along the stroke, so edges
+                    are not mathematically exact.
+
+    Default OFF, and that is a size judgement rather than a taste one. A
+    character ships at 64 px with a 0.8 px contour, so calligraphic variation
+    across that line is sub-pixel - it cannot read as weight, it only blots
+    the figure in. Tried it on the knight and he came out a black silhouette.
+    Large renders are the opposite case: the room is 1152 px of big flat
+    forms, where line weight is one of the few places character can live.
+
+    So: rooms opt in, characters stay clean.
     """
     scene = bpy.context.scene
     if thickness is not None:
@@ -335,17 +355,125 @@ def set_ink(crease=True, material_boundary=True, thickness=None,
     lineset.select_border = border
     lineset.select_crease = crease
     lineset.select_material_boundary = material_boundary
+    ls = lineset.linestyle
     if thickness is not None:
-        lineset.linestyle.thickness = thickness
+        ls.thickness = thickness
+
+    if not hand_drawn:
+        return
+
+    # Rebuild modifiers each call so repeated set_ink() calls in one session
+    # do not stack duplicates.
+    for coll in (ls.thickness_modifiers, ls.geometry_modifiers,
+                 ls.alpha_modifiers):
+        for mod in list(coll):
+            coll.remove(mod)
+
+    ls.caps = "ROUND"
+
+    if calligraphy > 0.0:
+        base = ls.thickness
+        cal = ls.thickness_modifiers.new(name="Calligraphy",
+                                         type="CALLIGRAPHY")
+        cal.orientation = math.radians(38.0)
+        cal.thickness_min = base * (1.0 - calligraphy * 0.75)
+        cal.thickness_max = base * (1.0 + calligraphy)
+
+    if wobble > 0.0:
+        geo = ls.geometry_modifiers.new(name="Wobble",
+                                        type="PERLIN_NOISE_1D")
+        # Attribute names on Freestyle modifiers vary between Blender
+        # versions (this one takes `frequency`, not `scale`), so set only
+        # what the build actually exposes rather than assuming.
+        for attr, value in (("amplitude", wobble), ("frequency", 9.0),
+                            ("octaves", 3)):
+            if hasattr(geo, attr):
+                setattr(geo, attr, value)
 
 
 # --------------------------------------------------------------------------
 # Cel-shaded material
 # --------------------------------------------------------------------------
 
+def _noise_field(nt, scale, detail=5.0, y=-620):
+    """TexCoord -> Mapping -> Noise. Returns (noise_node, mapping_node)."""
+    tex_co = nt.nodes.new("ShaderNodeTexCoord")
+    tex_co.location = (-1400, y)
+    mapping = nt.nodes.new("ShaderNodeMapping")
+    mapping.location = (-1220, y)
+    nt.links.new(tex_co.outputs["Object"], mapping.inputs["Vector"])
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.location = (-1040, y)
+    noise.inputs["Scale"].default_value = scale
+    noise.inputs["Detail"].default_value = detail
+    nt.links.new(mapping.outputs["Vector"], noise.inputs["Vector"])
+    return noise, mapping
+
+
+def _break_up_bands(nt, lum_socket, amount, scale):
+    """
+    Add noise to luminance BEFORE the ramp, so shading boundaries wobble.
+
+    This is the single cheapest thing that makes a cel render look painted
+    rather than computed. A ramp applied to clean luminance produces a
+    shading edge that is mathematically smooth - a perfect curve no hand
+    would draw. Perturbing the luminance first makes that edge irregular, so
+    the boundary between lit and shadow reads as a brush decision.
+
+    Returns the socket to feed the ramp.
+    """
+    noise, _ = _noise_field(nt, scale, detail=6.0, y=-760)
+    offset = nt.nodes.new("ShaderNodeMapRange")
+    offset.location = (-860, -760)
+    offset.inputs["From Min"].default_value = 0.25
+    offset.inputs["From Max"].default_value = 0.75
+    offset.inputs["To Min"].default_value = -amount
+    offset.inputs["To Max"].default_value = amount
+    offset.clamp = False
+    nt.links.new(noise.outputs["Fac"], offset.inputs["Value"])
+
+    add = nt.nodes.new("ShaderNodeMath")
+    add.location = (-680, -700)
+    add.operation = "ADD"
+    nt.links.new(lum_socket, add.inputs[0])
+    nt.links.new(offset.outputs["Result"], add.inputs[1])
+    return add.outputs["Value"]
+
+
+def _paint_grain(nt, colour_socket, amount, scale):
+    """
+    Multiply the shaded colour by a gentle noise field.
+
+    Flat fills are the other tell of a computed image. Real paint varies in
+    density across a surface even where the light does not change, so each
+    band gets a slow brightness drift rather than one exact value.
+
+    Returns the socket carrying the grained colour.
+    """
+    noise, _ = _noise_field(nt, scale, detail=4.0, y=-900)
+    level = nt.nodes.new("ShaderNodeMapRange")
+    level.location = (-860, -900)
+    level.inputs["From Min"].default_value = 0.3
+    level.inputs["From Max"].default_value = 0.7
+    level.inputs["To Min"].default_value = 1.0 - amount
+    level.inputs["To Max"].default_value = 1.0 + amount
+    level.clamp = True
+    nt.links.new(noise.outputs["Fac"], level.inputs["Value"])
+
+    mult = nt.nodes.new("ShaderNodeMixRGB")
+    mult.location = (660, -200)
+    mult.blend_type = "MULTIPLY"
+    mult.inputs["Fac"].default_value = 1.0
+    nt.links.new(colour_socket, mult.inputs["Color1"])
+    nt.links.new(level.outputs["Result"], mult.inputs["Color2"])
+    return mult.outputs["Color"]
+
+
 def cel_material(name: str, base_hex_or_rgba, shadow_mix: float = 0.45,
                  highlight_mix: float = 0.30, bands: int = 3,
-                 emission_strength: float = 1.0):
+                 emission_strength: float = 1.0,
+                 edge_noise: float = 0.055, edge_scale: float = 11.0,
+                 paint_grain: float = 0.085, grain_scale: float = 7.0):
     """
     "cel-shaded with painterly brushstroke highlights"
 
@@ -402,7 +530,10 @@ def cel_material(name: str, base_hex_or_rgba, shadow_mix: float = 0.45,
     ramp.location = (-40, 0)
     ramp.color_ramp.interpolation = "CONSTANT"
     _build_bands(ramp.color_ramp, bands)
-    nt.links.new(lum.outputs["Val"], ramp.inputs["Fac"])
+    lum_socket = lum.outputs["Val"]
+    if edge_noise > 0.0:
+        lum_socket = _break_up_bands(nt, lum_socket, edge_noise, edge_scale)
+    nt.links.new(lum_socket, ramp.inputs["Fac"])
 
     # Darkened and lightened versions of the base colour. Mixed in sRGB, then
     # converted to linear once, at the end.
@@ -418,10 +549,14 @@ def cel_material(name: str, base_hex_or_rgba, shadow_mix: float = 0.45,
     mix.inputs["Color2"].default_value = light_rgba
     nt.links.new(ramp.outputs["Color"], mix.inputs["Fac"])
 
+    shaded = mix.outputs["Color"]
+    if paint_grain > 0.0:
+        shaded = _paint_grain(nt, shaded, paint_grain, grain_scale)
+
     emit = nt.nodes.new("ShaderNodeEmission")
-    emit.location = (620, 0)
+    emit.location = (900, 0)
     emit.inputs["Strength"].default_value = emission_strength
-    nt.links.new(mix.outputs["Color"], emit.inputs["Color"])
+    nt.links.new(shaded, emit.inputs["Color"])
     nt.links.new(emit.outputs["Emission"], out.inputs["Surface"])
 
     return mat
@@ -481,7 +616,8 @@ def glow_material(name, hex_colour, strength=1.0, alpha=0.35):
 def painterly_material(name, base_hex, shadow_mix=0.42, highlight_mix=0.22,
                        bands=6, grain=0.14, grain_scale=9.0, smooth=True,
                        warm_hex="BE9E91", cool_hex=None,
-                       joints=0.0, joint_scale=6.0, joint_aspect=1.6):
+                       joints=0.0, joint_scale=6.0, joint_aspect=1.6,
+                       edge_noise=0.05, edge_scale=9.0):
     """
     An environment material: cel-shaded, but mottled and softer than the
     character shader.
@@ -619,7 +755,10 @@ def painterly_material(name, base_hex, shadow_mix=0.42, highlight_mix=0.22,
     ramp.location = (-140, 240)
     ramp.color_ramp.interpolation = "LINEAR" if smooth else "CONSTANT"
     _build_bands(ramp.color_ramp, bands)
-    nt.links.new(lum.outputs["Val"], ramp.inputs["Fac"])
+    lum_socket = lum.outputs["Val"]
+    if edge_noise > 0.0:
+        lum_socket = _break_up_bands(nt, lum_socket, edge_noise, edge_scale)
+    nt.links.new(lum_socket, ramp.inputs["Fac"])
 
     # --- shade the mottled base ------------------------------------------
     shadow = nt.nodes.new("ShaderNodeMixRGB")
