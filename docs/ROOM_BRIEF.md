@@ -18,40 +18,55 @@ what lets all ten rooms share one collision polygon.
 
 ```
 canvas            1152 x 640 px
-floor rectangle   x 94 … 1058      y 112 … 640      (964 x 528)
-wall band (top)   y 0 … 112        full width
-wall band (left)  x 0 … 94
-wall band (right) x 1058 … 1152
-near edge         NONE — the floor runs off the bottom of the canvas
+floor rectangle   x 130 … 1022     y 132 … 613      (892 x 482)
+wall band (top)   y 0 … 132        full width
+wall band (left)  x 0 … 130         walls LEAN OUTWARD
+wall band (right) x 1022 … 1152
+near edge         no wall — below y 613 is dark void
 ```
+
+The side walls **lean outward**, so they read as broad trapezoids rather than
+thin strips — that is what makes the room a diorama box opened toward the
+viewer, like the reference. Leaning the walls rather than using a perspective
+camera keeps the floor a perfect rectangle, which is what lets an
+orthographic sprite move across it without drifting out of alignment.
 
 ```
  0                                                            1152
  0 ┌──────────────────────────────────────────────────────────┐
-   │   TOP WALL — ornament lives here      [N door @ x576]     │
-112 ├──┬────────────────────────────────────────────────┬──────┤
-   │  │                                                 │      │
-   │ L│                                                 │R     │
-   │ W│              F L O O R                          │W     │
-   │ A│        keep this quiet — bullets fly here       │A     │
-377│ L│← W door                             E door →    │L     │
-   │ L│                                                 │L     │
-   │  │                                                 │      │
-640└──┴─────────────────────────────────────────────────┴──────┘
-    94                                                  1058
+   │  BACK WALL — dense gilt vine, 2 arched doors @ x~440,710  │
+132├────┬───────────────────────────────────────────────┬──────┤
+   │ \  │                                               │  /   │
+   │  L │                                               │ R    │
+   │  W │            F L O O R                          │ W    │
+373│  A │← W door   keep this quiet — bullets fly here   │ A →E │
+   │  L │                                               │ L    │
+   │  L │                                               │ L    │
+613├────┴───────────────────────────────────────────────┴──────┤
+640│                     dark void                             │
+   └──────────────────────────────────────────────────────────┘
+    130                                                   1022
 ```
 
 **Door anchors** (centre of each doorway, on the floor boundary):
 
 | Door | Position |
 |---|---|
-| North | `(576, 112)` |
-| West | `(94, 377)` |
-| East | `(1058, 377)` |
+| Back wall (two) | `(~440, 132)` and `(~710, 132)` |
+| West | `(130, 373)` |
+| East | `(1022, 373)` |
 
 There is deliberately **no south door and no south wall** — the camera looks
-into the room from that side, so the floor simply continues off the bottom
-edge. Your painted reference is composed exactly this way.
+into the room from that side. Your painted reference is composed exactly this
+way.
+
+**Wall height is a budget, not a free choice.** In a fixed 640 px canvas the
+wall band and the floor share the vertical space, so taller, more ornate walls
+directly cost play area. At one point the walls grew to 6 m and the floor fell
+to 438 px, where the Shockwave's 150 px radius covered 69% of the room — close
+to a free room clear. The shipped balance is a 132 px wall band and a 482 px
+floor, where Shockwave covers 62%. If you make the walls grander, check that
+number.
 
 ---
 
@@ -73,8 +88,10 @@ edge. Your painted reference is composed exactly this way.
 doorways with timber doors, pilasters at the corners, wall sconces, candles
 with running wax. Nothing is dodged up here, so detail is free.
 
-**On the floor — keep it quiet.** Large plain flagstones, a low-contrast
-circular rune inlay near the centre, and that's close to it. The GDD's avoid
+**On the floor — keep it quiet.** Plain stone with a low-contrast circular
+rune inlay near the centre, and that's close to it. Note the reference floor
+has **no visible flagstone joints at all** — a bold seam grid is the fastest
+way to make a room look cheap. The GDD's avoid
 list bans *"busy, high-contrast floor textures where bullets travel"*, and your
 own arena reference obeys it: its mandala inlay is barely a value step above
 the stone. All of the floor's interest comes from light and ink, not pattern.

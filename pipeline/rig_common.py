@@ -427,6 +427,57 @@ def cel_material(name: str, base_hex_or_rgba, shadow_mix: float = 0.45,
     return mat
 
 
+def no_ink_collection():
+    """
+    A collection whose objects Freestyle will not outline.
+
+    Needed for things that are light rather than matter - a shaft falling
+    across a floor, a glow pooled under a flame. Freestyle outlines every
+    object, and an ink contour drawn around a beam of light reads as a
+    mistake rather than as a drawing.
+
+    Call once after setup_render(); put anything that should not be inked
+    into the returned collection.
+    """
+    coll = bpy.data.collections.get("NoInk")
+    if coll is None:
+        coll = bpy.data.collections.new("NoInk")
+        bpy.context.scene.collection.children.link(coll)
+
+    lineset = bpy.context.scene.view_layers[0].freestyle_settings.linesets[0]
+    lineset.select_by_collection = True
+    lineset.collection = coll
+    # EXCLUSIVE: select edges that are NOT in this collection.
+    lineset.collection_negation = "EXCLUSIVE"
+    return coll
+
+
+def glow_material(name, hex_colour, strength=1.0, alpha=0.35):
+    """
+    A see-through emissive sheet, for light pools and shafts.
+
+    Transparent BSDF mixed with Emission, so the floor's own colour and all
+    its detail still show through the light lying on top of it. An opaque
+    quad would erase whatever it covered.
+    """
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    mat.blend_method = "BLEND" if hasattr(mat, "blend_method") else mat.blend_method
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    emit = nt.nodes.new("ShaderNodeEmission")
+    emit.inputs["Color"].default_value = hex_to_rgba(hex_colour)
+    emit.inputs["Strength"].default_value = strength
+    trans = nt.nodes.new("ShaderNodeBsdfTransparent")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    mix.inputs["Fac"].default_value = alpha
+    nt.links.new(trans.outputs["BSDF"], mix.inputs[1])
+    nt.links.new(emit.outputs["Emission"], mix.inputs[2])
+    nt.links.new(mix.outputs["Shader"], out.inputs["Surface"])
+    return mat
+
+
 def painterly_material(name, base_hex, shadow_mix=0.42, highlight_mix=0.22,
                        bands=6, grain=0.14, grain_scale=9.0, smooth=True,
                        warm_hex="BE9E91", cool_hex=None,
@@ -732,7 +783,8 @@ def add_cone(name, location, radius1, radius2, depth, material=None, verts=8,
 
 
 def add_arc(parts, name, centre, radius, start_deg, end_deg, bead_radius,
-            material, segments=10, plane="yz", squash=1.0, taper=1.0):
+            material, segments=10, plane="yz", squash=1.0, taper=1.0,
+            basis=None):
     """
     An open arc built from overlapping beads. Appends to `parts`.
 
@@ -747,6 +799,11 @@ def add_arc(parts, name, centre, radius, start_deg, end_deg, bead_radius,
 
     plane  - "yz" for a vertical arc bulging forward (a bow, a tail)
              "xz" for a vertical arc bulging sideways
+    basis  - (axis_a, axis_b), two world vectors defining the arc's own
+             plane, overriding `plane`. Needed for ornament on a LEANING
+             wall: such a wall's face lies in no world axis plane, so an
+             arc drawn in "xz" or "yz" cuts through it at an angle and the
+             ornament reads as streaks rather than as scrollwork.
     squash - flattens the bulge axis; 1.0 is circular
     taper  - bead radius at the far end, as a fraction of bead_radius
     """
@@ -756,7 +813,11 @@ def add_arc(parts, name, centre, radius, start_deg, end_deg, bead_radius,
         ang = math.radians(start_deg + (end_deg - start_deg) * t)
         off = radius * math.sin(ang)
         bulge = -radius * math.cos(ang) * squash
-        if plane == "yz":
+        if basis is not None:
+            a_axis, b_axis = basis
+            loc = tuple(centre[k] + a_axis[k] * off + b_axis[k] * bulge
+                        for k in range(3))
+        elif plane == "yz":
             loc = (cx, cy + bulge, cz + off)
         else:
             loc = (cx + bulge, cy, cz + off)

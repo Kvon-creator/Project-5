@@ -5,7 +5,7 @@
 
 [node name="Room" type="Node2D"]
 script = ExtResource("s_room")
-metadata/floor_centre = Vector2(576.0, 375.8)
+metadata/floor_centre = Vector2(576.0, 372.5)
 
 [node name="Background" type="Sprite2D" parent="."]
 texture = ExtResource("t_bg")
@@ -18,7 +18,7 @@ collision_mask = 0
 
 [node name="Shape" type="CollisionPolygon2D" parent="Bounds"]
 build_mode = 1
-polygon = PackedVector2Array(93.8, 640.0, 1058.2, 640.0, 1058.2, 111.6, 93.8, 111.6)
+polygon = PackedVector2Array(130.1, 613.4, 1021.9, 613.4, 1021.9, 131.7, 130.1, 131.7)
 
 [node name="NavRegion" type="NavigationRegion2D" parent="."]
 
@@ -35,44 +35,44 @@ y_sort_enabled = true
 y_sort_enabled = true
 
 [node name="DoorNorth" type="Marker2D" parent="Doors"]
-position = Vector2(576.0, 111.6)
+position = Vector2(576.0, 131.7)
 
 [node name="DoorWest" type="Marker2D" parent="Doors"]
-position = Vector2(93.8, 376.8)
+position = Vector2(130.1, 372.6)
 
 [node name="DoorEast" type="Marker2D" parent="Doors"]
-position = Vector2(1058.2, 376.8)
+position = Vector2(1021.9, 372.6)
 
 [node name="Spawn0" type="Marker2D" parent="SpawnMarkers"]
-position = Vector2(277.0, 223.0)
+position = Vector2(299.5, 232.8)
 
 [node name="Spawn1" type="Marker2D" parent="SpawnMarkers"]
-position = Vector2(576.0, 201.8)
+position = Vector2(576.0, 213.6)
 
 [node name="Spawn2" type="Marker2D" parent="SpawnMarkers"]
-position = Vector2(875.0, 223.0)
+position = Vector2(852.5, 232.8)
 
 [node name="Spawn3" type="Marker2D" parent="SpawnMarkers"]
-position = Vector2(238.4, 403.4)
+position = Vector2(263.8, 396.6)
 
 [node name="Spawn4" type="Marker2D" parent="SpawnMarkers"]
-position = Vector2(913.6, 403.4)
+position = Vector2(888.2, 396.6)
 
 [node name="Spawn5" type="Marker2D" parent="SpawnMarkers"]
-position = Vector2(576.0, 522.7)
+position = Vector2(576.0, 505.0)
 
 [node name="ObjSpot0" type="Marker2D" parent="ObjectMarkers"]
-position = Vector2(383.1, 318.5)
+position = Vector2(397.6, 319.6)
 
 [node name="ObjSpot1" type="Marker2D" parent="ObjectMarkers"]
-position = Vector2(768.9, 318.5)
+position = Vector2(754.4, 319.6)
 
 [node name="ObjSpot2" type="Marker2D" parent="ObjectMarkers"]
-position = Vector2(576.0, 390.1)
+position = Vector2(576.0, 384.6)
 
 [node name="ObjSpot3" type="Marker2D" parent="ObjectMarkers"]
-position = Vector2(354.2, 477.6)
+position = Vector2(370.9, 464.1)
 
 [node name="ObjSpot4" type="Marker2D" parent="ObjectMarkers"]
-position = Vector2(797.8, 477.6)
+position = Vector2(781.1, 464.1)
 

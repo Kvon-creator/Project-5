@@ -58,9 +58,31 @@ ROOM_W = 36.0
 # available height, which would make the GDD's most expensive ability close
 # to a free room-clear. 28 m projects to roughly 964 x 530, near 16:9, and
 # the GDD's numbers mean what they were balanced to mean.
-ROOM_D = 28.0
-WALL_H = 4.2
-WALL_T = 1.0
+ROOM_D = 27.5
+# Wall height and room depth are a BUDGET, not two free choices. In a fixed
+# 640 px canvas the wall band and the floor share the vertical space:
+#     wall px  = WALL_H * 0.956 * px_per_m      (0.956 = lean + 45 deg view)
+#     floor px = ROOM_D * sin(45) * px_per_m
+# Taller, more ornate walls directly cost play area. At WALL_H 6.0 / depth 25
+# the floor fell to 438 px and the Shockwave's 150 px radius covered 69% of
+# it - the same problem that forced the room deeper in the first place.
+# 5.4 / 27.5 keeps the walls tall enough to carry the vine work while leaving
+# a 481 px floor, where Shockwave covers 62%.
+WALL_H = 5.4
+WALL_T = 0.9
+
+# How far the walls lean OUTWARD from vertical.
+#
+# The reference room is a diorama box opened toward the viewer: its side
+# walls splay out as big trapezoids rather than standing as thin strips.
+# That comes from a perspective camera, which the GDD forbids - and rightly,
+# because a converging floor makes an orthographic sprite drift out of
+# alignment as it moves.
+#
+# Leaning the WALLS while leaving the CAMERA orthographic gets the same
+# picture with none of that cost: the walls present their faces to the
+# camera, and the floor stays a perfect rectangle.
+WALL_LEAN_DEG = 28.0
 
 # Matches the character rig, and it has to: a room shot at a different
 # elevation from the sprites standing in it reads as two separate pictures.
@@ -123,12 +145,15 @@ def build_floor(parts):
     floor's interest comes from light and from ink, not from pattern.
     """
     stone = mat("FloorStone", STONE_LIT, bands=7, grain=0.26,
-                grain_scale=5.0, shadow=0.58, light=0.55,
+                grain_scale=5.0, shadow=0.70, light=0.44,
                 warm=FLAME_GLOW, cool=COLD_SHADOW,
-                joints=0.45, joint_scale=7.0)
+                joints=0.0)
     seam = mat("FloorSeam", STONE_MID, shadow=0.34, light=0.12,
            bands=3, grain=0.05)
-    inlay = mat("FloorInlay", STONE_SHADOW, shadow=0.20, light=0.18, bands=2)
+    # Barely a value step above the stone, as in the arena reference -
+    # the floor must never compete with a bullet.
+    inlay = mat("FloorInlay", STONE_MID, shadow=0.52, light=0.30,
+                warm=FLAME_GLOW, cool=COLD_SHADOW, bands=4)
 
     parts.append(rig.add_box("Floor", (0, 0, -0.1), (ROOM_W, ROOM_D, 0.2),
                              stone))
@@ -140,8 +165,7 @@ def build_floor(parts):
     # reference. Real annuli - the first pass drew a ring and then a filled
     # disc of floor stone on top of it, which buried every inner ring and
     # left one flat circle.
-    for radius, width in ((7.6, 0.30), (6.9, 0.16), (3.6, 0.22),
-                          (1.4, 0.18)):
+    for radius, width in ((7.6, 0.16), (6.9, 0.09), (3.6, 0.11)):
         parts.append(rig.add_ring(f"Ring{int(radius * 10)}", (0, 0, 0.01),
                                   radius=radius, thickness=width,
                                   height=0.02, material=inlay, verts=56))
@@ -151,7 +175,7 @@ def build_floor(parts):
         a = math.tau * i / 8.0
         parts.append(rig.add_box(f"Spoke{i}",
                                  (math.cos(a) * 5.0, math.sin(a) * 5.0, 0.01),
-                                 (2.8, 0.22, 0.016), inlay,
+                                 (2.4, 0.10, 0.016), inlay,
                                  rotation=(0, 0, a)))
 
 
@@ -159,195 +183,290 @@ def build_floor(parts):
 # Walls, pilasters, filigree, doors
 # --------------------------------------------------------------------------
 
-def vine_scroll(parts, tag, centre, span, height, material, facing,
-                flip=False):
+class WallFrame:
     """
-    One gilt vine scroll: a shallow S-curve with leaves off it.
+    A coordinate frame on one leaning wall.
 
-    Real illuminated-manuscript scrollwork cannot be modelled convincingly
-    from primitives, but it does not need to be - at room scale what reads is
-    the RHYTHM: a curving stem, a spiral terminal, leaves alternating off it.
-    Built from arcs rather than straight segments, which is the difference
-    between ornament and a row of boxes.
+    Ornament is authored in flat (u, v) wall coordinates - u along the wall,
+    v up its face - and this converts to world space. Without it, every
+    scroll and door would need its lean baked into hand-written coordinates,
+    and changing WALL_LEAN_DEG would mean re-deriving all of them.
+
+    u: -0.5 .. 0.5 along the wall's length
+    v:  0.0 .. 1.0 up the wall's face
+    n: metres out from the face, toward the room
     """
-    cx, cy, cz = centre
+
+    def __init__(self, side):
+        lean = math.radians(WALL_LEAN_DEG)
+        hw, hd = ROOM_W * 0.5, ROOM_D * 0.5
+        self.side = side
+        self.length = ROOM_W if side == "back" else ROOM_D
+
+        if side == "back":
+            self.base = (0.0, hd, 0.0)
+            self.along = (1.0, 0.0, 0.0)
+            # Up the face, leaning away from the camera (+Y).
+            self.up = (0.0, math.sin(lean), math.cos(lean))
+            self.normal = (0.0, -math.cos(lean), math.sin(lean))
+            self.rot = (-lean, 0.0, 0.0)
+        elif side == "left":
+            self.base = (-hw, 0.0, 0.0)
+            self.along = (0.0, 1.0, 0.0)
+            self.up = (-math.sin(lean), 0.0, math.cos(lean))
+            self.normal = (math.cos(lean), 0.0, math.sin(lean))
+            self.rot = (0.0, -lean, 0.0)
+        else:  # right
+            self.base = (hw, 0.0, 0.0)
+            self.along = (0.0, 1.0, 0.0)
+            self.up = (math.sin(lean), 0.0, math.cos(lean))
+            self.normal = (-math.cos(lean), 0.0, math.sin(lean))
+            self.rot = (0.0, lean, 0.0)
+
+    def at(self, u, v, n=0.0):
+        """World position for wall coordinates (u, v) offset n into the room."""
+        du = u * self.length
+        dv = v * WALL_H
+        return tuple(self.base[i] + self.along[i] * du + self.up[i] * dv
+                     + self.normal[i] * n for i in range(3))
+
+
+def vine_cluster(parts, tag, frame, u, v, scale, material, flip=False):
+    """
+    A knot of gilt vine: curling stems, spiral terminals and leaves.
+
+    Drawn in the WALL's own basis (along, up), not a world axis plane. A
+    leaning wall's face lies in no world plane, so arcs drawn in "xz" or
+    "yz" slice through it diagonally and the ornament comes out as vertical
+    streaks - which is exactly what the first attempt on the side walls did.
+
+    Beads are small and numerous on purpose. Fat, widely spaced beads read
+    as a string of gold coins; a stem needs the beads to overlap heavily.
+    """
     sgn = -1.0 if flip else 1.0
+    basis = (frame.up, frame.along)
+    plane_scale = scale
 
-    # Two opposed arcs make the S. In a "back" panel the stem runs along X;
-    # in a side panel it runs along Y.
-    for half in (0, 1):
-        direction = 1.0 if half == 0 else -1.0
-        off = span * 0.25 * direction
-        if facing == "back":
-            c = (cx + off, cy, cz)
-            plane = "xz"
-        else:
-            c = (cx, cy + off, cz)
-            plane = "yz"
-        rig.add_arc(parts, f"{tag}S{half}", c, radius=height * 0.42,
-                    start_deg=-80.0 * direction * sgn,
-                    end_deg=80.0 * direction * sgn,
-                    bead_radius=height * 0.055, material=material,
-                    segments=9, plane=plane, squash=0.55 * direction)
+    def arc(sub, du, dv, radius, a0, a1, bead, segs, squash, taper=0.55):
+        centre = frame.at(u + du, v + dv, 0.07)
+        rig.add_arc(parts, f"{tag}{sub}", centre, radius=radius,
+                    start_deg=a0, end_deg=a1, bead_radius=bead,
+                    material=material, segments=segs, squash=squash,
+                    taper=taper, basis=basis)
 
-    # Spiral terminals at each end.
-    for end, direction in (("A", 1.0), ("B", -1.0)):
-        if facing == "back":
-            c = (cx + span * 0.46 * direction, cy, cz + height * 0.1)
-            plane = "xz"
-        else:
-            c = (cx, cy + span * 0.46 * direction, cz + height * 0.1)
-            plane = "yz"
-        rig.add_arc(parts, f"{tag}C{end}", c, radius=height * 0.20,
-                    start_deg=0.0, end_deg=300.0,
-                    bead_radius=height * 0.05, material=material,
-                    segments=9, plane=plane, squash=0.9)
+    # Main stem and its counter-curve.
+    arc("m", 0.0, 0.0, plane_scale * 0.50, -100.0 * sgn, 100.0 * sgn,
+        plane_scale * 0.040, 14, 0.60 * sgn)
+    arc("c", 0.03 * sgn, -0.09, plane_scale * 0.34, 80.0 * sgn,
+        -140.0 * sgn, plane_scale * 0.032, 11, -0.62 * sgn)
+    # A third, smaller tendril so the knot does not read as two lines.
+    arc("t", -0.02 * sgn, 0.08, plane_scale * 0.22, -40.0 * sgn,
+        180.0 * sgn, plane_scale * 0.026, 9, 0.8 * sgn, taper=0.35)
+    # Spiral terminals.
+    arc("sa", 0.034 * sgn, 0.145, plane_scale * 0.15, 0.0, 340.0,
+        plane_scale * 0.030, 10, 0.95, taper=0.4)
+    arc("sb", -0.032 * sgn, -0.150, plane_scale * 0.13, 0.0, 320.0,
+        plane_scale * 0.027, 9, 0.95, taper=0.4)
 
-    # Leaves alternating along the stem.
-    for i in range(5):
-        t = (i + 0.5) / 5.0 - 0.5
+    # Leaves, placed ALONG the stem's S-curve rather than in a straight row,
+    # and small. The previous pass used leaves nearly a metre long set out
+    # in a line, which rendered as gold fins stuck to the wall with no
+    # visible plant holding them. Foliage reads by density and by hugging
+    # the stem, not by size.
+    for i in range(11):
+        t = (i + 0.5) / 11.0 - 0.5
+        # Follow roughly the same S the main arc traces.
+        curve = math.sin(t * math.pi * 1.9) * 0.155 * sgn
         updown = 1.0 if i % 2 == 0 else -1.0
-        if facing == "back":
-            loc = (cx + t * span, cy - 0.05, cz + updown * height * 0.26)
-            size = (height * 0.17, 0.10, height * 0.11)
+        lu = u + t * 0.095
+        lv = v + curve + updown * 0.030
+        lx, ly, lz = frame.at(lu, lv, 0.075)
+        leaf = rig.add_cone(f"{tag}l{i}", (lx, ly, lz),
+                            radius1=plane_scale * 0.052,
+                            radius2=0.0, depth=plane_scale * 0.20,
+                            material=material, verts=5,
+                            rotation=frame.rot)
+        if frame.side == "back":
+            leaf.scale = (1.0, 0.25, 1.0)
+            leaf.rotation_euler = (frame.rot[0], 0.0,
+                                   math.radians(58.0 * updown))
         else:
-            loc = (cx - 0.05, cy + t * span, cz + updown * height * 0.26)
-            size = (0.10, height * 0.17, height * 0.11)
-        parts.append(rig.add_box(f"{tag}L{i}", loc, size, material,
-                                 rotation=(0.0, math.radians(38.0 * updown),
-                                           0.0)))
+            leaf.scale = (0.25, 1.0, 1.0)
+            leaf.rotation_euler = (math.radians(58.0 * updown),
+                                   frame.rot[1], 0.0)
+        parts.append(leaf)
 
 
-def arched_door(parts, cx, cy, facing, tag):
+def wall_door(parts, tag, frame, u, materials):
     """
-    An arched doorway: stone surround, warm timber, dark opening.
+    An arched doorway set into a leaning wall: stone surround, gilt moulding,
+    timber leaf with iron bands, and a dark head.
 
-    The GDD needs doors to read as locked or unlocked at a glance. Here the
-    SURROUND is rendered into the room image (it never changes) while the
-    door leaf itself is left to a separate sprite in Godot, so RoomManager
-    can swap locked and open art without re-rendering the whole room.
+    Built in wall coordinates so it leans with the wall it belongs to.
     """
-    surround = mat("DoorStone" + tag, CANDLE_WARM, shadow=0.35, light=0.28)
-    void = mat("DoorVoid" + tag, INK_BLACK, shadow=0.0, light=0.08)
+    m = materials
+    w_u = 3.1 / frame.length      # door width as a fraction of wall length
+    h_v = 3.6 / WALL_H            # door height as a fraction of wall height
+    rot = frame.rot
 
-    w, h = 3.2, 3.4
-    deep = WALL_T * 0.9
-    if facing == "back":
-        size_surround = (w + 0.9, deep, h + 0.5)
-        size_void = (w, deep * 1.1, h)
-        arch_rot = (math.radians(90), 0, 0)
-    else:
-        size_surround = (deep, w + 0.9, h + 0.5)
-        size_void = (deep * 1.1, w, h)
-        arch_rot = (math.radians(90), 0, math.radians(90))
+    def box(name, u0, v0, size, mat, n=0.0):
+        parts.append(rig.add_box(name, frame.at(u0, v0, n), size, mat,
+                                 rotation=rot))
 
-    parts.append(rig.add_box(f"DoorSur{tag}", (cx, cy, h * 0.5 + 0.1),
-                             size_surround, surround))
-    parts.append(rig.add_box(f"DoorVoid{tag}", (cx, cy, h * 0.46),
-                             size_void, void))
-    # The arch itself.
-    parts.append(rig.add_cylinder(f"Arch{tag}", (cx, cy, h * 0.92),
-                                  radius=w * 0.5, depth=deep * 1.12,
-                                  material=void, verts=16,
-                                  rotation=arch_rot))
-    parts.append(rig.add_cylinder(f"ArchSur{tag}", (cx, cy, h * 0.92),
-                                  radius=w * 0.5 + 0.45, depth=deep * 0.98,
-                                  material=surround, verts=16,
-                                  rotation=arch_rot))
+    long_axis = (1, 0, 0) if frame.side == "back" else (0, 1, 0)
 
-    # Timber door leaves set into the opening. The reference doors are warm
-    # red-brown boards with iron bands - the only warm mass on a cool wall,
-    # which is what makes a doorway read as a way out from across the room.
-    timber = mat(f"Timber{tag}", WOOD_RUST, shadow=0.30, light=0.30,
-                 grain=0.17, grain_scale=22.0)
-    iron = mat(f"Iron{tag}", STONE_SHADOW, shadow=0.18, light=0.26)
+    def sized(along, up, thick):
+        if frame.side == "back":
+            return (along, thick, up)
+        return (thick, along, up)
+
+    # Surround, slightly proud of the wall.
+    box(f"{tag}Sur", u, h_v * 0.5,
+        sized(3.9, 4.3, 0.34), m["warmstone"], n=0.10)
+    # Gilt moulding around the opening.
+    box(f"{tag}Gilt", u, h_v * 0.5,
+        sized(3.5, 3.9, 0.30), m["gilt"], n=0.16)
+    # The dark opening.
+    box(f"{tag}Void", u, h_v * 0.47,
+        sized(3.1, 3.6, 0.26), m["ink"], n=0.20)
+
+    # Round-headed arch.
+    arch_rot = (rot[0] + math.radians(90.0), rot[1], rot[2]) \
+        if frame.side == "back" else (rot[0], rot[1],
+                                      rot[2] + math.radians(90.0))
+    ax, ay, az = frame.at(u, h_v * 0.92, 0.17)
+    parts.append(rig.add_cylinder(f"{tag}ArchG", (ax, ay, az), radius=1.78,
+                                  depth=0.28, material=m["gilt"], verts=18,
+                                  rotation=(math.radians(90.0), 0, 0)
+                                  if frame.side == "back"
+                                  else (math.radians(90.0), 0,
+                                        math.radians(90.0))))
+    ax, ay, az = frame.at(u, h_v * 0.90, 0.21)
+    parts.append(rig.add_cylinder(f"{tag}ArchV", (ax, ay, az), radius=1.55,
+                                  depth=0.26, material=m["ink"], verts=18,
+                                  rotation=(math.radians(90.0), 0, 0)
+                                  if frame.side == "back"
+                                  else (math.radians(90.0), 0,
+                                        math.radians(90.0))))
+
+    # Timber leaf: vertical boards with two iron bands.
     for i in range(4):
-        t = (i + 0.5) / 4.0 - 0.5
-        if facing == "back":
-            loc = (cx + t * w * 0.92, cy - deep * 0.62, h * 0.46)
-            size = (w * 0.21, 0.12, h * 0.90)
-        else:
-            loc = (cx - deep * 0.62, cy + t * w * 0.92, h * 0.46)
-            size = (0.12, w * 0.21, h * 0.90)
-        parts.append(rig.add_box(f"Board{tag}{i}", loc, size, timber))
-    for i, dz in enumerate((h * 0.22, h * 0.70)):
-        if facing == "back":
-            loc = (cx, cy - deep * 0.70, dz)
-            size = (w * 0.94, 0.09, h * 0.09)
-        else:
-            loc = (cx - deep * 0.70, cy, dz)
-            size = (0.09, w * 0.94, h * 0.09)
-        parts.append(rig.add_box(f"Band{tag}{i}", loc, size, iron))
+        du = (i - 1.5) * (2.6 / frame.length) / 4.0
+        box(f"{tag}Board{i}", u + du, h_v * 0.44,
+            sized(0.62, 3.1, 0.14), m["timber"], n=0.26)
+    for i, vv in enumerate((h_v * 0.22, h_v * 0.68)):
+        box(f"{tag}Band{i}", u, vv, sized(2.8, 0.26, 0.10), m["iron"],
+            n=0.31)
 
 
 def build_walls(parts):
-    stone = mat("WallStone", STONE_MID, shadow=0.52, light=0.50,
-                warm=FLAME_GLOW, cool=COLD_SHADOW)
-    cap = mat("WallCap", STONE_SHADOW, shadow=0.30, light=0.22)
-    pil = mat("Pilaster", CANDLE_WARM, shadow=0.48, light=0.42,
-              warm=FLAME_GLOW, cool=COLD_SHADOW)
+    m = {
+        "stone": mat("WallStone", STONE_MID, shadow=0.52, light=0.52,
+                     warm=FLAME_GLOW, cool=COLD_SHADOW, grain=0.16,
+                     grain_scale=7.0),
+        "warmstone": mat("WallWarm", CANDLE_WARM, shadow=0.48, light=0.46,
+                         warm=FLAME_GLOW, cool=COLD_SHADOW),
+        "gilt": mat("WallGilt", GILT, shadow=0.30, light=0.52,
+                    warm="FFD98A", cool=COLD_SHADOW, grain=0.07),
+        "ink": mat("WallInk", INK_BLACK, shadow=0.0, light=0.18,
+                   cool=COLD_SHADOW, bands=3),
+        "timber": mat("WallTimber", WOOD_RUST, shadow=0.30, light=0.42,
+                      warm=FLAME_GLOW, cool=COLD_SHADOW, grain=0.18,
+                      grain_scale=20.0),
+        "iron": mat("WallIron", STONE_SHADOW, shadow=0.22, light=0.34,
+                    warm=FLAME_GLOW, cool=COLD_SHADOW),
+        "pillar": mat("WallPillar", STONE_SHADOW, shadow=0.42, light=0.44,
+                      warm=FLAME_GLOW, cool=COLD_SHADOW),
+    }
 
-    hw, hd = ROOM_W * 0.5, ROOM_D * 0.5
+    frames = {side: WallFrame(side) for side in ("back", "left", "right")}
 
-    # Back wall (far side, +Y) and the two side walls. The near side is open
-    # so the camera looks into the room.
-    parts.append(rig.add_box("WallBack", (0, hd + WALL_T * 0.5, WALL_H * 0.5),
-                             (ROOM_W + WALL_T * 2, WALL_T, WALL_H), stone))
-    parts.append(rig.add_box("WallLeft", (-hw - WALL_T * 0.5, 0, WALL_H * 0.5),
-                             (WALL_T, ROOM_D, WALL_H), stone))
-    parts.append(rig.add_box("WallRight", (hw + WALL_T * 0.5, 0, WALL_H * 0.5),
-                             (WALL_T, ROOM_D, WALL_H), stone))
+    for side, frame in frames.items():
+        length = frame.length
+        thick = WALL_T
 
-    # Caps along the top of each wall, so the wall reads as a solid mass with
-    # a lit top edge rather than a flat painted band.
-    parts.append(rig.add_box("CapBack", (0, hd + WALL_T * 0.5, WALL_H + 0.18),
-                             (ROOM_W + WALL_T * 2.4, WALL_T * 1.3, 0.36), cap))
-    for side, x in (("L", -1), ("R", 1)):
-        parts.append(rig.add_box(
-            f"Cap{side}", (x * (hw + WALL_T * 0.5), 0, WALL_H + 0.18),
-            (WALL_T * 1.3, ROOM_D, 0.36), cap))
+        # The wall slab itself, leaning outward.
+        centre = frame.at(0.0, 0.5, -thick * 0.5)
+        size = (length + 1.4, thick, WALL_H) if side == "back" \
+            else (thick, length + 1.4, WALL_H)
+        parts.append(rig.add_box(f"Slab{side}", centre, size, m["stone"],
+                                 rotation=frame.rot))
 
-    # Corner pilasters.
-    for sx in (-1, 1):
-        parts.append(rig.add_box(
-            f"PilarB{sx}", (sx * hw, hd + WALL_T * 0.5, WALL_H * 0.52),
-            (1.5, WALL_T * 1.5, WALL_H * 1.04), pil))
+        # Capping along the top edge.
+        cap_c = frame.at(0.0, 1.0, -thick * 0.3)
+        cap_s = (length + 2.0, thick * 1.5, 0.5) if side == "back" \
+            else (thick * 1.5, length + 2.0, 0.5)
+        parts.append(rig.add_box(f"Cap{side}", cap_c, cap_s, m["pillar"],
+                                 rotation=frame.rot))
 
-    # Doors: one per wall, matching the GDD's room model.
-    arched_door(parts, 0.0, hd + WALL_T * 0.5, "back", "N")
-    arched_door(parts, -hw - WALL_T * 0.5, 0.0, "side", "W")
-    arched_door(parts, hw + WALL_T * 0.5, 0.0, "side", "E")
+        # Doors: two on the back wall, one on each side, as the reference has.
+        doors = (-0.22, 0.22) if side == "back" else (0.0,)
+        for i, du in enumerate(doors):
+            wall_door(parts, f"Door{side}{i}", frame, du, m)
 
-    # Gilt vine scrollwork on the wall stretches either side of each door.
-    gilt = mat("Gilt", GILT, shadow=0.30, light=0.34, grain=0.08)
-    vine_scroll(parts, "VBL", (-ROOM_W * 0.28, hd + WALL_T * 0.02,
-                               WALL_H * 0.60),
-                ROOM_W * 0.30, WALL_H * 0.46, gilt, "back")
-    vine_scroll(parts, "VBR", (ROOM_W * 0.28, hd + WALL_T * 0.02,
-                               WALL_H * 0.60),
-                ROOM_W * 0.30, WALL_H * 0.46, gilt, "back", flip=True)
-    for side, x in (("L", -1), ("R", 1)):
-        for j, cy in ((0, -ROOM_D * 0.28), (1, ROOM_D * 0.28)):
-            vine_scroll(parts, f"VS{side}{j}",
-                        (x * (hw + WALL_T * 0.02), cy, WALL_H * 0.60),
-                        ROOM_D * 0.26, WALL_H * 0.46, gilt, "side",
-                        flip=(j == 1))
+        # Dark pillars breaking the wall into bays.
+        pillar_us = (-0.5, -0.36, 0.36, 0.5) if side == "back" \
+            else (-0.5, 0.5)
+        for i, pu in enumerate(pillar_us):
+            pc = frame.at(pu, 0.5, 0.18)
+            ps = (0.75, thick * 1.1, WALL_H * 1.02) if side == "back" \
+                else (thick * 1.1, 0.75, WALL_H * 1.02)
+            parts.append(rig.add_box(f"Pil{side}{i}", pc, ps, m["pillar"],
+                                     rotation=frame.rot))
 
-    # A gilt string course running the length of each wall, tying the
-    # scrollwork together instead of leaving it floating.
-    for tag, loc, size in (
-            ("CourseB", (0.0, hd + WALL_T * 0.02, WALL_H * 0.88),
-             (ROOM_W + WALL_T, 0.10, 0.13)),
-            ("CourseL", (-hw - WALL_T * 0.02, 0.0, WALL_H * 0.88),
-             (0.10, ROOM_D, 0.13)),
-            ("CourseR", (hw + WALL_T * 0.02, 0.0, WALL_H * 0.88),
-             (0.10, ROOM_D, 0.13))):
-        parts.append(rig.add_box(tag, loc, size, gilt))
+        # Dense gilt vine filling every bay between doors and pillars.
+        if side == "back":
+            spots = [(-0.455, 0.58), (-0.455, 0.30), (-0.30, 0.62),
+                     (-0.30, 0.34), (0.0, 0.66), (0.0, 0.40), (0.0, 0.17),
+                     (0.30, 0.62), (0.30, 0.34), (0.455, 0.58),
+                     (0.455, 0.30), (-0.15, 0.78), (0.15, 0.78)]
+        else:
+            spots = [(-0.34, 0.62), (-0.34, 0.33), (-0.20, 0.76),
+                     (0.20, 0.76), (0.34, 0.62), (0.34, 0.33),
+                     (-0.42, 0.45), (0.42, 0.45)]
+        for i, (u, v) in enumerate(spots):
+            vine_cluster(parts, f"V{side}{i}", frame, u, v,
+                         scale=WALL_H * 0.30, material=m["gilt"],
+                         flip=(i % 2 == 1))
+
+    return frames
 
 
 # --------------------------------------------------------------------------
 # Dressing: candles, ink, paper
 # --------------------------------------------------------------------------
+
+def build_light_shaft():
+    """
+    The shaft as a translucent sheet on the floor, not just lights.
+
+    Lights alone gave a measurable band - 154 against 116 on the surrounding
+    floor - but with falloff so soft it read as "that side is brighter"
+    rather than as a beam. The reference's shaft has defined edges, and a
+    defined edge is a shape, so it is drawn as one. Returned separately
+    because it must go into the no-ink collection.
+    """
+    # Low alpha. At 0.30 the sheet stopped reading as light lying ON the
+    # floor and became a solid white stripe painted OVER it, hiding the
+    # stone, the ink pools and everything else beneath.
+    sheet = rig.glow_material("ShaftGlow", "FFD9A8", strength=1.1,
+                              alpha=0.085)
+    core = rig.glow_material("ShaftCore", "FFE6C0", strength=1.3,
+                             alpha=0.065)
+    out = []
+    # Two overlapping slabs, the narrower one brighter, which gives the beam
+    # a soft outer edge and a hot centre without any gradient texture.
+    # Kept inside the floor. The first version ran 1.5x the room's depth and
+    # climbed the back wall, which a beam falling on the floor cannot do.
+    for tag, width, material, lift in (("Outer", 8.2, sheet, 0.05),
+                                       ("Inner", 4.0, core, 0.07)):
+        slab = rig.add_box(f"Shaft{tag}",
+                           (-ROOM_W * 0.17, -ROOM_D * 0.06, lift),
+                           (width, ROOM_D * 1.02, 0.02), material,
+                           rotation=(0.0, 0.0, math.radians(31.0)))
+        out.append(slab)
+    return out
+
 
 def build_dressing(parts):
     wax = mat("Wax", PARCHMENT, shadow=0.26, light=0.28, grain=0.10)
@@ -437,6 +556,44 @@ def build_dressing(parts):
             drop.scale = (1.0, 0.70, 1.0)
             parts.append(drop)
 
+    # ---- foreground quill and a dropped flower -------------------------
+    # The reference puts a big quill across the near corner and a small
+    # flower in the light. They sell the scale of the room and give the
+    # empty foreground something to read.
+    fx, fy = ROOM_W * 0.33, -ROOM_D * 0.44
+    parts.append(rig.add_cylinder("BigQuillShaft", (fx, fy, 0.08),
+                                  radius=0.075, depth=4.4, material=quill,
+                                  verts=7,
+                                  rotation=(0.0, math.radians(90.0),
+                                            math.radians(34.0))))
+    for side, sgn in (("U", 1.0), ("D", -1.0)):
+        vane = rig.add_cone(
+            f"BigQuillVane{side}",
+            (fx - 1.2 + sgn * 0.22, fy + 0.85 + sgn * 0.32, 0.08),
+            radius1=0.62, radius2=0.0, depth=3.4, material=quill,
+            verts=6,
+            rotation=(0.0, math.radians(90.0),
+                      math.radians(34.0 + sgn * 13.0)))
+        vane.scale = (1.0, 1.0, 0.16)
+        parts.append(vane)
+
+    flower_mid = mat("FlowerMid", "D9A0A6", shadow=0.30, light=0.34,
+                     warm=FLAME_GLOW, cool=COLD_SHADOW)
+    flx, fly = -ROOM_W * 0.28, ROOM_D * 0.02
+    for i in range(5):
+        a = math.tau * i / 5.0
+        petal = rig.add_sphere(
+            f"Petal{i}", (flx + math.cos(a) * 0.26,
+                          fly + math.sin(a) * 0.19, 0.05), 0.17,
+            flower_mid, segments=7, rings=5)
+        petal.scale = (1.0, 1.0, 0.28)
+        parts.append(petal)
+    parts.append(rig.add_cylinder("FlowerStem", (flx + 0.9, fly - 0.3, 0.05),
+                                  radius=0.05, depth=1.5, material=sconce,
+                                  verts=5,
+                                  rotation=(0.0, math.radians(90.0),
+                                            math.radians(-18.0))))
+
     # ---- loose pages and dropped quills --------------------------------
     pages = [(-13.4, -2.4, 18), (-12.2, -3.8, -40), (8.4, 6.2, 25),
              (9.8, 6.9, -15), (-5.6, -8.2, 55), (15.2, 2.4, -62),
@@ -510,7 +667,7 @@ def setup_room_render():
     # Camera
     cam_data = bpy.data.cameras.new("RoomCam")
     cam_data.type = "ORTHO"
-    cam_data.ortho_scale = ROOM_W + 7.0
+    cam_data.ortho_scale = ROOM_W + 10.5
     cam = bpy.data.objects.new("RoomCam", cam_data)
     bpy.context.collection.objects.link(cam)
     elev = math.radians(ROOM_ELEVATION_DEG)
@@ -548,15 +705,33 @@ def setup_room_render():
     fo.rotation_euler = (math.radians(66.0), math.radians(34.0),
                          math.radians(-120.0))
 
-    # The light shaft. A wide spot aimed down across the room from the upper
-    # left, which paints a bright warm patch on the floor.
+    # The light shaft, built as a LINE of lights rather than one spot.
+    #
+    # A single spot paints a circular pool; the reference's shaft is a long
+    # diagonal band falling from the upper left across the floor. Several
+    # modest lights strung along that diagonal give the band its shape, and
+    # letting their pools overlap gives it soft edges for free.
+    for i in range(6):
+        t = i / 5.0
+        bx = -ROOM_W * 0.40 + t * ROOM_W * 0.42
+        by = ROOM_D * 0.40 - t * ROOM_D * 0.80
+        bl = bpy.data.lights.new(f"Shaft{i}", type="POINT")
+        bl.energy = 1500.0
+        bl.color = rig.hex_to_rgba("FFD9A8")[:3]
+        bl.shadow_soft_size = 3.4
+        blo = bpy.data.objects.new(f"Shaft{i}", bl)
+        bpy.context.collection.objects.link(blo)
+        blo.location = (bx, by, 3.4)
+
+    # A wide soft spot behind the band, so it reads as light entering the
+    # room rather than as a row of lamps.
     #
     # Done with light rather than geometry on purpose: a translucent shaft
     # object would be outlined by Freestyle like everything else, and an ink
     # line around a beam of light looks like a mistake.
     shaft = bpy.data.lights.new("Shaft", type="SPOT")
     # ~7000 W at 13 m lands near 1.0 in the shaft's centre.
-    shaft.energy = 7200.0
+    shaft.energy = 2600.0
     shaft.color = rig.hex_to_rgba("FFD9A8")[:3]
     shaft.spot_size = math.radians(86.0)
     shaft.spot_blend = 0.95
@@ -592,7 +767,7 @@ def setup_room_render():
         # that wants ~520 W: saturated at its foot, about 0.3 at 7 m out.
         # The previous 9000 W lit the entire 36 m room to the top band,
         # which is exactly why it looked flat.
-        fl.energy = 520.0
+        fl.energy = 430.0
         fl.color = rig.hex_to_rgba(EMBER)[:3]
         fl.shadow_soft_size = 2.2
         fo2 = bpy.data.objects.new(f"Floor{i}", fl)
@@ -604,7 +779,7 @@ def setup_room_render():
     # A low warm bounce just above the floor, standing in for light kicking
     # back off the flagstones. Without it the floor's lower half goes dead.
     bounce = bpy.data.lights.new("Bounce", type="POINT")
-    bounce.energy = 180.0
+    bounce.energy = 90.0
     bounce.color = rig.hex_to_rgba(CANDLE_WARM)[:3]
     bounce.shadow_soft_size = 6.0
     bo = bpy.data.objects.new("Bounce", bounce)
@@ -620,6 +795,14 @@ def main():
     build_floor(parts)
     build_walls(parts)
     build_dressing(parts)
+
+    # Light-shaft sheets go in the collection Freestyle skips, so the beam
+    # has no ink contour around it.
+    no_ink = rig.no_ink_collection()
+    for ob in build_light_shaft():
+        for c in list(ob.users_collection):
+            c.objects.unlink(ob)
+        no_ink.objects.link(ob)
 
     # Emissive objects are light SOURCES; they must not also block light.
     for ob in parts:

@@ -399,12 +399,12 @@ def room_brief_page():
 
     # Wall bands, then the floor on top.
     c += rect(dx, dy, dw, dh, rgb("554F59"))
-    c += rect(X(94), Y(640), (1058 - 94) * scale, (640 - 112) * scale,
+    c += rect(X(130), Y(613), (1022 - 130) * scale, (613 - 132) * scale,
               rgb("8A8088"))
 
     # Door anchors.
-    for label, (px, py) in (("N", (576, 112)), ("W", (94, 377)),
-                            ("E", (1058, 377))):
+    for label, (px, py) in (("N", (440, 132)), ("N", (710, 132)),
+                            ("W", (130, 373)), ("E", (1022, 373))):
         c += rect(X(px) - 7, Y(py) - 7, 14, 14, rgb("70280C"))
         c += text(X(px) - 3, Y(py) - 3, 8, label, font=b"/F2",
                   colour=rgb("E2C5A8"))
@@ -414,8 +414,8 @@ def room_brief_page():
     c += text(X(360), Y(60), 9, "ornament lives on the walls",
               colour=rgb("E2C5A8"))
     c += text(dx, dy - 14, 9,
-              "1152 x 640 canvas   -   floor x 94..1058, y 112..640   -   "
-              "no south wall: the floor runs off the bottom edge",
+              "1152 x 640 canvas   -   floor x 130..1022, y 132..613   -   "
+              "side walls lean outward; no south wall",
               colour=DIM)
 
     # --- notes column ---------------------------------------------------
