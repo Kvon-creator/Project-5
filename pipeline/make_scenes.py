@@ -359,14 +359,14 @@ def make_env_objects():
 
     write("Barrel.tscn", scene(
         "Barrel", 0,
-        '[sub_resource type="CircleShape2D" id="Sh"]\nradius = 11.0\n',
+        '[sub_resource type="CircleShape2D" id="Sh"]\nradius = 11.0\n',  # flask base ~24 px across
         [("texture_barrel", p("barrel.png"))],
         L_ENV, L_PLAYER | L_ENEMY | L_PBULLET | L_EBULLET))
 
     write("Cover.tscn", scene(
         "Cover", 1,
         '[sub_resource type="RectangleShape2D" id="Sh"]\n'
-        'size = Vector2(48, 20)\n',
+        'size = Vector2(46, 30)\n',   # tome stack footprint
         [("texture_intact", p("cover_intact.png")),
          ("texture_cracked", p("cover_cracked.png")),
          ("texture_crumbling", p("cover_crumbling.png"))],
@@ -382,9 +382,10 @@ def make_env_objects():
     write("Trap.tscn", scene(
         "Trap", 2,
         '[sub_resource type="RectangleShape2D" id="Sh"]\n'
-        'size = Vector2(40, 40)\n',
+        'size = Vector2(66, 44)\n',   # trap plate, foreshortened on Y
         [("texture_armed", p("trap_armed.png")),
-         ("texture_disarmed", p("trap_disarmed.png"))],
+         ("texture_disarmed", p("trap_disarmed.png")),
+         ("texture_triggered", p("trap_triggered.png"))],
         0, 0,
         extra='\n[node name="Trigger" type="Area2D" parent="."]\n'
               'collision_layer = 0\ncollision_mask = %d\n'
@@ -392,6 +393,40 @@ def make_env_objects():
               'shape = SubResource("Sh")\n'
               '\n[connection signal="body_entered" from="Trigger" to="." '
               'method="_on_body_entered"]\n' % (L_PLAYER | L_ENEMY)))
+
+
+def make_powerup():
+    """
+    PowerUp.tscn - the Luminous Pigment Shell.
+
+    GDD, Combat Rewards: dropped every 5th enemy defeated, grants +20% weapon
+    damage for 10 s, does not stack, a new pickup resets the timer.
+
+    An Area2D rather than a body: the player walks over it, they do not bump
+    into it.
+    """
+    write("PowerUp.tscn", '''[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/PowerUp.gd" id="s_pu"]
+[ext_resource type="Texture2D" path="{tex}" id="t_pu"]
+
+[sub_resource type="CircleShape2D" id="Sh_pu"]
+radius = 16.0
+
+[node name="PowerUp" type="Area2D"]
+collision_layer = 0
+collision_mask = {mask}
+script = ExtResource("s_pu")
+
+[node name="Sprite" type="Sprite2D" parent="."]
+texture = ExtResource("t_pu")
+
+[node name="Shape" type="CollisionShape2D" parent="."]
+shape = SubResource("Sh_pu")
+
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]
+'''.format(tex=rel("assets", "sprites", "props", "powerup_shell.png"),
+           mask=L_PLAYER))
 
 
 # --------------------------------------------------------------------------
@@ -772,6 +807,7 @@ def main():
     make_enemy()
     make_bullets()
     make_env_objects()
+    make_powerup()
     # make_tileset() - retired: rooms are painted backgrounds now.
     make_room()
     make_hud()

@@ -54,6 +54,16 @@ signal armed_changed(armed: bool)
 var hits_taken: int = 0
 var trap_armed: bool = true
 
+## True for a moment after a trap fires, so it can show the "just triggered"
+## art - nibs wet with violet ink. Purely visual; the damage has already been
+## dealt by then.
+var _just_triggered: bool = false
+
+## How long the triggered art shows before the plate goes back to disarmed.
+## Shorter than TRAP_REARM_SECONDS, so the player sees three distinct states:
+## fired -> safe -> armed again.
+const TRIGGERED_DISPLAY_SECONDS: float = 0.6
+
 @onready var sprite: Sprite2D = $Sprite
 
 
@@ -101,13 +111,18 @@ func _on_body_entered(body: Node2D) -> void:
 	if kind != Kind.TRAP or not trap_armed:
 		return
 	trap_triggered.emit(body)
+	_just_triggered = true
 	set_armed(false)
 
 	# TODO(K'von): deal TRAP_DAMAGE to `body`, with "trap" as the source.
 	# "15 damage to the enemy or player on it" - both, not just enemies.
 
-	# Built: the re-arm clock and its visual.
-	await get_tree().create_timer(TRAP_REARM_SECONDS).timeout
+	# Built: the three-state visual and the re-arm clock.
+	await get_tree().create_timer(TRIGGERED_DISPLAY_SECONDS).timeout
+	_just_triggered = false
+	_refresh_visual()
+	await get_tree().create_timer(
+			TRAP_REARM_SECONDS - TRIGGERED_DISPLAY_SECONDS).timeout
 	set_armed(true)
 
 
@@ -140,7 +155,10 @@ func _refresh_visual() -> void:
 			else:
 				key = "texture_crumbling"
 		Kind.TRAP:
-			key = "texture_armed" if trap_armed else "texture_disarmed"
+			if _just_triggered:
+				key = "texture_triggered"
+			else:
+				key = "texture_armed" if trap_armed else "texture_disarmed"
 		Kind.BARREL:
 			key = "texture_barrel"
 	if key != "" and sprite.has_meta(key):

@@ -111,9 +111,7 @@ func register_kill(enemy_type: String, killed_by: String,
 	kill_count += 1
 	if kill_count % KILLS_PER_POWERUP == 0:
 		powerup_dropped.emit(at)
-		# TODO(Jarman): instance the pickup scene at `at`. Picking it up
-		# calls start_boost(). The pickup is Spirit Teal, per the palette
-		# ("Spirit Teal: Player shots, damage power-up").
+		_drop_powerup(at)
 
 
 ## "Stacking: Does not stack; a new pickup resets the timer to 10 s"
@@ -132,3 +130,36 @@ func reset_for_new_run() -> void:
 	if is_boosted:
 		boost_time_remaining = 0.0
 		boost_ended.emit()
+
+
+# --------------------------------------------------------------------------
+# The drop - built
+# --------------------------------------------------------------------------
+
+## Loaded lazily rather than preloaded. This is an autoload, so a preload
+## would run before the project has finished importing textures on a fresh
+## clone, and a missing texture would take the whole singleton down with it.
+const POWERUP_SCENE_PATH := "res://scenes/PowerUp.tscn"
+var _powerup_scene: PackedScene
+
+
+func _drop_powerup(at: Vector2) -> void:
+	if _powerup_scene == null:
+		if not ResourceLoader.exists(POWERUP_SCENE_PATH):
+			push_warning("CombatRewards: %s missing; no power-up dropped."
+					% POWERUP_SCENE_PATH)
+			return
+		_powerup_scene = load(POWERUP_SCENE_PATH)
+
+	var pickup := _powerup_scene.instantiate()
+	pickup.global_position = at
+
+	# Drop it into the room's Objects node when there is one, so it is
+	# y-sorted with the other props and cleaned up with the room.
+	var parent: Node = get_tree().current_scene
+	var gm := GameManager.instance
+	if gm and is_instance_valid(gm.room):
+		var objects := gm.room.get_node_or_null("Objects")
+		if objects:
+			parent = objects
+	parent.add_child(pickup)
