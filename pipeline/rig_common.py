@@ -427,6 +427,176 @@ def cel_material(name: str, base_hex_or_rgba, shadow_mix: float = 0.45,
     return mat
 
 
+def painterly_material(name, base_hex, shadow_mix=0.42, highlight_mix=0.22,
+                       bands=6, grain=0.14, grain_scale=9.0, smooth=True,
+                       warm_hex="BE9E91", cool_hex=None,
+                       joints=0.0, joint_scale=6.0, joint_aspect=1.6):
+    """
+    An environment material: cel-shaded, but mottled and softer than the
+    character shader.
+
+    Two differences from cel_material(), both aimed at stopping large flat
+    surfaces reading as vector art:
+
+    1. GRAIN. The base colour is modulated by a noise texture before any
+       shading, so a floor is not one flat value across 964 px. Kept subtle -
+       the GDD's avoid list bans "busy, high-contrast floor textures where
+       bullets travel", so this is surface interest, not pattern.
+
+    2. SOFTER STEPS. Characters use 3 hard bands, which is what makes them
+       read as inked drawings at 64 px. A wall rendered that way looks like
+       a paint-by-numbers panel. Here the ramp gets more stops and LINEAR
+       interpolation, which keeps the stylisation while letting candlelight
+       actually fall off across a wall.
+
+    `warm_hex` is what the lit band leans toward and `cool_hex` what the
+    shadow band leans toward, and that pairing is doing more work than it
+    looks like.
+
+    The shading chain here is ShaderToRGB -> RGBToBW -> ramp, and RGBToBW
+    DISCARDS THE LIGHT'S COLOUR. So a bright orange candle and a bright blue
+    one produce identical output; warmth can never arrive from the lights
+    themselves. Measured on the first room build, the floor came out with a
+    red-minus-blue of +10 across a scene lit entirely by ember point lights.
+
+    Rather than reconstruct the hue in nodes, the ramp carries it: the lit
+    end leans warm and the shadow end leans cool, so "near a flame" reads
+    amber and "away from one" reads violet. That is the contrast the
+    reference is built on, and as a bonus it is art-directable - the warmth
+    is a colour you choose, not a by-product of light placement.
+    """
+    if cool_hex is None:
+        cool_hex = "18030A"
+    base_srgb = hex_to_srgb(base_hex) if isinstance(base_hex, str) \
+        else tuple(base_hex)
+
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    out.location = (1200, 0)
+
+    # --- mottled base colour -------------------------------------------
+    tex_co = nt.nodes.new("ShaderNodeTexCoord")
+    tex_co.location = (-1200, -300)
+    mapping = nt.nodes.new("ShaderNodeMapping")
+    mapping.location = (-1000, -300)
+    mapping.inputs["Scale"].default_value = (1.0, 1.0, 1.0)
+    nt.links.new(tex_co.outputs["Object"], mapping.inputs["Vector"])
+
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.location = (-820, -300)
+    noise.inputs["Scale"].default_value = grain_scale
+    noise.inputs["Detail"].default_value = 6.0
+    if "Roughness" in noise.inputs:
+        noise.inputs["Roughness"].default_value = 0.6
+    nt.links.new(mapping.outputs["Vector"], noise.inputs["Vector"])
+
+    # Pull the noise toward the middle so it never spikes to pure black/white.
+    nrange = nt.nodes.new("ShaderNodeMapRange")
+    nrange.location = (-640, -300)
+    nrange.inputs["From Min"].default_value = 0.30
+    nrange.inputs["From Max"].default_value = 0.70
+    nrange.inputs["To Min"].default_value = 0.5 - grain
+    nrange.inputs["To Max"].default_value = 0.5 + grain
+    nrange.clamp = True
+    nt.links.new(noise.outputs["Fac"], nrange.inputs["Value"])
+
+    darker = _mix_rgba(base_srgb, hex_to_srgb(cool_hex), 0.22)
+    lighter = _mix_rgba(base_srgb, hex_to_srgb(warm_hex), 0.26)
+
+    base_mix = nt.nodes.new("ShaderNodeMixRGB")
+    base_mix.location = (-440, -200)
+    base_mix.inputs["Color1"].default_value = srgb_to_linear_rgba(darker)
+    base_mix.inputs["Color2"].default_value = srgb_to_linear_rgba(lighter)
+    nt.links.new(nrange.outputs["Result"], base_mix.inputs["Fac"])
+
+    surface_colour = base_mix.outputs["Color"]
+
+    # --- flagstone joints, procedurally -----------------------------------
+    # Drawn into the MATERIAL rather than modelled as geometry, and that is
+    # the whole point. Seam strips modelled as separate objects each pick up
+    # their own Freestyle outline, so a floor ends up covered in bold black
+    # lines and reads as a tile grid - exactly the look the painted-room
+    # approach exists to avoid. A texture has no silhouette, so it cannot be
+    # outlined, and the joints stay as quiet as the reference's.
+    if joints > 0.0:
+        brick = nt.nodes.new("ShaderNodeTexBrick")
+        brick.location = (-640, -560)
+        brick.offset = 0.5
+        brick.squash = 1.0
+        brick.inputs["Scale"].default_value = joint_scale
+        brick.inputs["Mortar Size"].default_value = 0.012
+        brick.inputs["Mortar Smooth"].default_value = 0.35
+        brick.inputs["Bias"].default_value = 0.0
+        brick.inputs["Brick Width"].default_value = joint_aspect
+        brick.inputs["Row Height"].default_value = 1.0
+        brick.inputs["Color1"].default_value = (1, 1, 1, 1)
+        brick.inputs["Color2"].default_value = (1, 1, 1, 1)
+        brick.inputs["Mortar"].default_value = (0, 0, 0, 1)
+        nt.links.new(mapping.outputs["Vector"], brick.inputs["Vector"])
+
+        joint_strength = nt.nodes.new("ShaderNodeMath")
+        joint_strength.location = (-460, -560)
+        joint_strength.operation = "MULTIPLY"
+        joint_strength.inputs[1].default_value = joints
+        nt.links.new(brick.outputs["Fac"], joint_strength.inputs[0])
+
+        joint_mix = nt.nodes.new("ShaderNodeMixRGB")
+        joint_mix.location = (-260, -460)
+        joint_mix.inputs["Color2"].default_value = hex_to_rgba(cool_hex)
+        nt.links.new(base_mix.outputs["Color"], joint_mix.inputs["Color1"])
+        nt.links.new(joint_strength.outputs["Value"], joint_mix.inputs["Fac"])
+        surface_colour = joint_mix.outputs["Color"]
+
+    # --- lighting, banded ------------------------------------------------
+    diffuse = nt.nodes.new("ShaderNodeBsdfDiffuse")
+    diffuse.location = (-700, 240)
+    diffuse.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+
+    to_rgb = nt.nodes.new("ShaderNodeShaderToRGB")
+    to_rgb.location = (-500, 240)
+    nt.links.new(diffuse.outputs["BSDF"], to_rgb.inputs["Shader"])
+
+    lum = nt.nodes.new("ShaderNodeRGBToBW")
+    lum.location = (-320, 240)
+    nt.links.new(to_rgb.outputs["Color"], lum.inputs["Color"])
+
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.location = (-140, 240)
+    ramp.color_ramp.interpolation = "LINEAR" if smooth else "CONSTANT"
+    _build_bands(ramp.color_ramp, bands)
+    nt.links.new(lum.outputs["Val"], ramp.inputs["Fac"])
+
+    # --- shade the mottled base ------------------------------------------
+    shadow = nt.nodes.new("ShaderNodeMixRGB")
+    shadow.location = (-120, -120)
+    shadow.inputs["Fac"].default_value = shadow_mix
+    shadow.inputs["Color2"].default_value = hex_to_rgba(cool_hex)
+    nt.links.new(surface_colour, shadow.inputs["Color1"])
+
+    light = nt.nodes.new("ShaderNodeMixRGB")
+    light.location = (-120, -380)
+    light.inputs["Fac"].default_value = highlight_mix
+    light.inputs["Color2"].default_value = hex_to_rgba(warm_hex)
+    nt.links.new(surface_colour, light.inputs["Color1"])
+
+    final = nt.nodes.new("ShaderNodeMixRGB")
+    final.location = (400, 0)
+    nt.links.new(ramp.outputs["Color"], final.inputs["Fac"])
+    nt.links.new(shadow.outputs["Color"], final.inputs["Color1"])
+    nt.links.new(light.outputs["Color"], final.inputs["Color2"])
+
+    emit = nt.nodes.new("ShaderNodeEmission")
+    emit.location = (800, 0)
+    emit.inputs["Strength"].default_value = 1.0
+    nt.links.new(final.outputs["Color"], emit.inputs["Color"])
+    nt.links.new(emit.outputs["Emission"], out.inputs["Surface"])
+    return mat
+
+
 def _build_bands(ramp, bands: int) -> None:
     """Lay out `bands` evenly spaced hard steps from black to white."""
     while len(ramp.elements) > 1:
