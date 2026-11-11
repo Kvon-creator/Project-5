@@ -178,6 +178,46 @@ the game, because that ink is the boss.
 
 ---
 
+## Recommended: repaint, don't generate from scratch
+
+The Blender room (`room_01.png`) is a **composition lock**, not finished art.
+It exists to pin the geometry; an image model supplies the painterly quality
+that geometry cannot.
+
+Image models do not hit exact pixel coordinates. If you ask for a room from
+nothing, its floor will not land in the rectangle above, and every room will
+then need its collision polygon authored by hand. Asking for a *repaint* of an
+existing composition avoids that entirely — the framing survives, the existing
+JSON still applies, and collision costs nothing.
+
+**The workflow:**
+
+1. Give the model two images: `assets/sprites/rooms/room_01.png` as the
+   **composition and perspective reference**, and
+   `docs/reference/room-painted-interior.png` as the **style reference**.
+2. Use the prompt below.
+3. Save the result as `room_NN.png` at exactly 1152 × 640.
+4. Add the line to `layouts.json` and run `make_scenes.py`.
+
+**Repaint prompt:**
+
+> *Repaint this room in the style of the second image: hand-inked
+> illustration, bold dark contour lines, flat painterly colour, visible paper
+> grain. **Keep the composition, perspective, wall angles, door positions and
+> floor boundary exactly as they are in the first image.** Add dense ornate
+> gilt vine filigree across the wall faces, warm candlelight pooling on cool
+> grey-violet stone, and keep the floor plain and low-contrast. No magenta, no
+> teal, no text, no watermark.*
+
+The emphasised sentence is the one that matters. Without it the model will
+recompose the room and the collision polygon stops matching the art.
+
+**Check before accepting a room:** the floor corners must still sit at
+`(130, 132)`, `(1022, 132)`, `(1022, 613)`, `(130, 613)`. If the repaint has
+drifted, either regenerate or give that room its own `room_NN.json`.
+
+---
+
 ## Adding a finished room
 
 1. Export at **1152 × 640**, PNG, with the floor exactly in the rectangle above.
