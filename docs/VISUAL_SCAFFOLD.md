@@ -108,7 +108,8 @@ python3 pipeline/check_anchor.py # measures it against the anchor asset
 | `rig_common.py` | The shared rig. Camera, lights, cel shader, ink outlines, palette. **Everything** goes through this. |
 | `player.py` | The anchor asset — the **Nib Knight**. 8 directions. |
 | `enemy.py` | The bestiary: Knight Snail, Hare Archer, Grotesque, Ink Scribe. 8 directions each. |
-| `room.py` | Renders a room as ONE painted background, and exports its floor outline + markers as pixels into a `.json` beside it. |
+| `room.py` | Renders a room as ONE painted background, and exports its floor outline + markers as pixels into a `.json` beside it, plus the shared `layouts.json` manifest. |
+| `props.py` | Lamp Oil, Tome Stack (3 stages), Scribe's Trap (3 states), Pigment Shell, bullets. |
 | `extract_palette.py` | Clusters the reference images to measure the palette. |
 | `convert_refs.py`, `make_art_bible.py` | Build `docs/ART_BIBLE.pdf`. |
 | `props.py` | Bullets, barrel, cover (3 damage stages), trap (armed/disarmed). |
@@ -210,8 +211,11 @@ enforced in code rather than in review.
   GDScript is written against the 4.x API, but the first person to open the
   project should expect to fix import paths or a node-path typo. That's a
   five-minute job, not a rebuild — but I'd rather flag it than let you find it.
-- Only 1 of the 10 room layouts. Copy `pipeline/room.py`, change the geometry,
-  render — the JSON export means collision follows automatically.
+- Only 1 of the 10 room layouts. **See [`ROOM_BRIEF.md`](ROOM_BRIEF.md)** — it
+  specifies the exact canvas and floor rectangle every room must hit, plus a
+  prompt and a line for each of the ten. Hit the framing and a new room costs a
+  PNG and one line in `layouts.json`; collision, doors and spawn markers all
+  come from the shared `framing` block.
 - **The rooms and props are not final art.** The decided pipeline is hybrid:
   rooms and props as painted/generated 2D (single images, no rotation), characters
   in Blender (8-direction turnarounds are the one thing image generation is bad

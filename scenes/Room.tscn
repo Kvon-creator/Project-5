@@ -5,7 +5,7 @@
 
 [node name="Room" type="Node2D"]
 script = ExtResource("s_room")
-metadata/floor_centre = Vector2(576.0, 376.8)
+metadata/floor_centre = Vector2(576.0, 375.8)
 
 [node name="Background" type="Sprite2D" parent="."]
 texture = ExtResource("t_bg")
@@ -18,7 +18,7 @@ collision_mask = 0
 
 [node name="Shape" type="CollisionPolygon2D" parent="Bounds"]
 build_mode = 1
-polygon = PackedVector2Array(93.8, 642.0, 1058.2, 642.0, 1058.2, 111.6, 93.8, 111.6)
+polygon = PackedVector2Array(93.8, 640.0, 1058.2, 640.0, 1058.2, 111.6, 93.8, 111.6)
 
 [node name="NavRegion" type="NavigationRegion2D" parent="."]
 

@@ -369,6 +369,102 @@ ORDER = [
 ]
 
 
+def room_brief_page():
+    """
+    The room framing, drawn rather than described.
+
+    An artist needs to see where the floor goes, not read four coordinates
+    and hope. Every room image that lands its floor in this rectangle shares
+    one collision polygon, so a new layout costs a PNG and one line of JSON.
+    """
+    c = rect(0, 0, PW, PH, BG)
+    y = PH - 56
+    c += text(MARGIN, y, 24, "ROOM BRIEF", font=b"/F2", colour=FG)
+    y -= 20
+    c += text(MARGIN, y, 10,
+              "Full spec in docs/ROOM_BRIEF.md. Hit this framing and a new "
+              "room needs no engine work at all.", colour=DIM)
+
+    # --- the framing diagram, drawn to scale ---------------------------
+    scale = 0.46
+    dw, dh = 1152 * scale, 640 * scale
+    dx, dy = MARGIN, PH - 110 - dh
+
+    def X(px):
+        return dx + px * scale
+
+    def Y(py):
+        # Image Y grows down; PDF Y grows up.
+        return dy + (640 - py) * scale
+
+    # Wall bands, then the floor on top.
+    c += rect(dx, dy, dw, dh, rgb("554F59"))
+    c += rect(X(94), Y(640), (1058 - 94) * scale, (640 - 112) * scale,
+              rgb("8A8088"))
+
+    # Door anchors.
+    for label, (px, py) in (("N", (576, 112)), ("W", (94, 377)),
+                            ("E", (1058, 377))):
+        c += rect(X(px) - 7, Y(py) - 7, 14, 14, rgb("70280C"))
+        c += text(X(px) - 3, Y(py) - 3, 8, label, font=b"/F2",
+                  colour=rgb("E2C5A8"))
+
+    c += text(X(430), Y(300), 11, "FLOOR - keep quiet", font=b"/F2",
+              colour=rgb("3C2C39"))
+    c += text(X(360), Y(60), 9, "ornament lives on the walls",
+              colour=rgb("E2C5A8"))
+    c += text(dx, dy - 14, 9,
+              "1152 x 640 canvas   -   floor x 94..1058, y 112..640   -   "
+              "no south wall: the floor runs off the bottom edge",
+              colour=DIM)
+
+    # --- notes column ---------------------------------------------------
+    cx = dx + dw + 24
+    yy = PH - 112
+    c += text(cx, yy, 13, "Rules", font=b"/F2", colour=ACCENT)
+    yy -= 18
+    for line in ("Fixed 3/4, 45 deg, ORTHOGRAPHIC.",
+                 "Walls do not converge.",
+                 "Three walls: top, left, right.",
+                 "Ornament on walls. Floor stays plain",
+                 "   - bullets fly there.",
+                 "Warm candlelight from top-left",
+                 "   across cool grey-violet stone.",
+                 "Ink pools and loose pages, flat",
+                 "   on the floor, never tall."):
+        c += text(cx, yy, 9.5, line, colour=FG)
+        yy -= 13
+
+    yy -= 10
+    c += text(cx, yy, 13, "Never on scenery", font=b"/F2",
+              colour=rgb("FF2E6E"))
+    yy -= 18
+    c += rect(cx, yy - 3, 16, 11, rgb("FF2E6E"))
+    c += text(cx + 22, yy, 9, "#FF2E6E - enemy bullets only", colour=FG)
+    yy -= 16
+    c += rect(cx, yy - 3, 16, 11, rgb("35D6C4"))
+    c += text(cx + 22, yy, 9, "#35D6C4 - the player's colour", colour=FG)
+
+    # --- prompt ----------------------------------------------------------
+    yy = dy - 34
+    c += text(MARGIN, yy, 12, "Append to every room prompt", font=b"/F2",
+              colour=ACCENT)
+    yy -= 15
+    prompt = ("top-down 3/4 orthographic view of a gothic scriptorium "
+              "chamber, hand-inked illustration with bold dark contour lines "
+              "and flat painterly colour, ornate gilt vine filigree and "
+              "arched timber doors on the stone walls, plain low-contrast "
+              "grey-violet flagstone floor, spilled black ink pools and "
+              "scattered manuscript pages, warm candlelight from the upper "
+              "left across cool stone, limited palette of grey-violet stone, "
+              "parchment cream, gold and ember orange, no magenta, no teal, "
+              "no text, clean readable composition, empty centre")
+    for line in wrap(prompt, 142):
+        c += text(MARGIN, yy, 9, line, colour=FG)
+        yy -= 11
+    return c
+
+
 def build():
     pdf = PDF()
     root = pdf.reserve()
@@ -397,6 +493,7 @@ def build():
 
     emit_page(cover_page())
     emit_page(palette_rule_page())
+    emit_page(room_brief_page())
 
     missing = []
     for name in ORDER:

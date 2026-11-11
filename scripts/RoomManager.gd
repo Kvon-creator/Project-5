@@ -85,6 +85,9 @@ var doors_locked: bool = false
 ## GDD: "no repeats in a run".
 var used_layouts: Array[int] = []
 
+## The layout currently shown, as an index into RoomLayouts.all().
+var layout_index: int = -1
+
 ## The room is a painted background plus collision, not a tilemap. See
 ## pipeline/room.py - it renders the image AND exports the floor outline and
 ## marker positions in pixels, which pipeline/make_scenes.py turns into this
@@ -100,6 +103,30 @@ var used_layouts: Array[int] = []
 func _ready() -> void:
 	Palette.check_no_magenta(self)
 	_refresh_door_visuals()
+	if layout_index < 0 and RoomLayouts.count() > 0:
+		load_layout(0)
+
+
+## Show a layout. Because every room image conforms to the shared framing in
+## docs/ROOM_BRIEF.md, the floor outline, doors and markers are the same for
+## all of them - so this is only a texture swap. Nothing about collision or
+## spawning has to change.
+func load_layout(index: int) -> void:
+	var tex := RoomLayouts.texture_for(index)
+	if tex == null:
+		return
+	layout_index = index
+	background.texture = tex
+	if index not in used_layouts:
+		used_layouts.append(index)
+
+
+## Pick and show a layout not yet used this run.
+## GDD: "no repeats in a run".
+func load_unused_layout() -> void:
+	var index := RoomLayouts.draw_unused(used_layouts)
+	if index >= 0:
+		load_layout(index)
 
 
 ## How many waves this room runs. Written out because it is pure GDD table
@@ -135,8 +162,10 @@ func start_room(index: int) -> void:
 	# start wave 0. Emit room_started(index).
 	#
 	# Built and ready to call:
-	#   set_doors_locked(true)      - door sprites switch to the locked art
+	#   load_unused_layout()        - swaps in a layout not used this run
+	#   lock_and_show(true)         - locks the doors
 	#   place_objects()             - the 1-3 interactive objects
+	load_unused_layout()
 	lock_and_show(true)
 	room_started.emit(index)
 

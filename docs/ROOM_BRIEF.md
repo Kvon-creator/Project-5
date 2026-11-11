@@ -1,0 +1,181 @@
+# Room brief — producing the 10 layouts
+
+The GDD needs **10 hand-built room layouts**. One (`room_01`) is a Blender
+stand-in so the game runs. The other nine should be real painted art, because
+a room is a single image with no rotation — exactly what 2D generation and
+hand-painting are good at, and exactly where the Blender pipeline falls short.
+
+This document is the contract. **Hit the framing below and a new room needs no
+engine work at all** — drop the PNG in, add one line to `layouts.json`, done.
+Miss the framing and someone has to author a collision polygon by hand.
+
+---
+
+## The framing (non-negotiable)
+
+Every room image is the same canvas with the floor in the same place. That's
+what lets all ten rooms share one collision polygon.
+
+```
+canvas            1152 x 640 px
+floor rectangle   x 94 … 1058      y 112 … 640      (964 x 528)
+wall band (top)   y 0 … 112        full width
+wall band (left)  x 0 … 94
+wall band (right) x 1058 … 1152
+near edge         NONE — the floor runs off the bottom of the canvas
+```
+
+```
+ 0                                                            1152
+ 0 ┌──────────────────────────────────────────────────────────┐
+   │   TOP WALL — ornament lives here      [N door @ x576]     │
+112 ├──┬────────────────────────────────────────────────┬──────┤
+   │  │                                                 │      │
+   │ L│                                                 │R     │
+   │ W│              F L O O R                          │W     │
+   │ A│        keep this quiet — bullets fly here       │A     │
+377│ L│← W door                             E door →    │L     │
+   │ L│                                                 │L     │
+   │  │                                                 │      │
+640└──┴─────────────────────────────────────────────────┴──────┘
+    94                                                  1058
+```
+
+**Door anchors** (centre of each doorway, on the floor boundary):
+
+| Door | Position |
+|---|---|
+| North | `(576, 112)` |
+| West | `(94, 377)` |
+| East | `(1058, 377)` |
+
+There is deliberately **no south door and no south wall** — the camera looks
+into the room from that side, so the floor simply continues off the bottom
+edge. Your painted reference is composed exactly this way.
+
+---
+
+## Camera and perspective
+
+- **Fixed 3/4 top-down, 45° elevation.** Same as every character and prop, so
+  a sprite standing in the room belongs to the same picture.
+- **Orthographic, not perspective.** Walls do not converge. The reference
+  image converges slightly; don't copy that — a sprite moving across a
+  converging floor drifts out of alignment.
+- Three walls visible: top, left, right. Each wall is a shallow band, not a
+  tall backdrop.
+
+---
+
+## What goes where
+
+**On the walls — this is where ornament belongs.** Gilt vine filigree, arched
+doorways with timber doors, pilasters at the corners, wall sconces, candles
+with running wax. Nothing is dodged up here, so detail is free.
+
+**On the floor — keep it quiet.** Large plain flagstones, a low-contrast
+circular rune inlay near the centre, and that's close to it. The GDD's avoid
+list bans *"busy, high-contrast floor textures where bullets travel"*, and your
+own arena reference obeys it: its mandala inlay is barely a value step above
+the stone. All of the floor's interest comes from light and ink, not pattern.
+
+**Storytelling props, flat on the floor:** spilled black ink pools, loose
+manuscript pages, dropped quills, a fallen flower, wax spatter. These sit flat
+and never stand tall enough to hide a bullet.
+
+**Light:** warm candlelight from the top-left falling across cool grey-violet
+stone, ideally with one visible shaft. That warm-on-cool contrast is the single
+thing that makes the reference feel lit rather than flat. Key light direction
+is fixed top-left across the whole project.
+
+---
+
+## Palette
+
+Measured from the references by `pipeline/extract_palette.py`. Stay inside it.
+
+| Role | Hex | Use |
+|---|---|---|
+| Stone Lit | `#8A8088` | Floor in light — the room's dominant value |
+| Stone Mid | `#776B70` | Wall faces |
+| Stone Shadow | `#554F59` | Wall shadow, floor away from the light |
+| Candle Warm | `#BE9E91` | Stone near a flame |
+| Parchment | `#E2C5A8` | Loose pages, highlights |
+| Gilt | `#C8A24E` | The gold vine work |
+| Ink Violet | `#3C2C39` | Deep shadow, recesses |
+| Ink Black | `#18030A` | Ink pools, contour lines, the void |
+| Ember | `#F06A2A` | Candle flame only |
+
+**Forbidden on scenery, without exception:**
+
+- **Magenta or pink (`#FF2E6E`)** — reserved for enemy bullets and nothing
+  else. This is the hardest rule in the project: the core mechanic is grazing
+  within 20 px of a bullet, and a pink prop makes that unreadable.
+- **Teal (`#35D6C4`)** — the player's colour. Their shots, their nib, their
+  power-up. A teal object in the scenery reads as a pickup.
+
+---
+
+## Prompt
+
+Append this to any image-generation prompt, unchanged, so every room matches:
+
+> *top-down 3/4 orthographic view of a gothic scriptorium chamber, hand-inked
+> illustration with bold dark contour lines and flat painterly colour, ornate
+> gilt vine filigree and arched timber doors on the stone walls, plain
+> low-contrast grey-violet flagstone floor, spilled black ink pools and
+> scattered manuscript pages on the ground, warm candlelight from the upper
+> left across cool stone, limited palette of grey-violet stone, parchment
+> cream, gold and ember orange, no magenta, no teal, no text, no watermark,
+> clean readable composition, empty centre*
+
+Then add the room's own line — see the ten below.
+
+**Also say, every time:** three walls (top, left, right), no bottom wall, floor
+running off the bottom edge, one arched door centred on each of the three
+walls, nothing standing tall in the middle of the floor.
+
+---
+
+## The ten layouts
+
+One per room. Rooms 1–6 are combat, 7 is the elite room, 8 is the boss arena;
+the remaining two are spares so the pool exceeds the run length and the GDD's
+"no repeats in a run" rule has room to work.
+
+| # | Room | Added line for the prompt |
+|---|---|---|
+| 01 | **Scriptorium** | *rows of empty writing desks against the walls, a toppled inkwell* |
+| 02 | **Stacks** | *towering bookshelves built into the walls, ladders, loose folios* |
+| 03 | **Binding Room** | *presses and cutting tables along the walls, leather offcuts underfoot* |
+| 04 | **Flooded Cellar** | *shallow black ink flooding the floor, stone steps, dripping arches* |
+| 05 | **Candle Vault** | *hundreds of guttering candles in wall niches, heavy wax flows* |
+| 06 | **Map Room** | *vast faded chart inlaid into the floor, brass instruments on the walls* |
+| 07 | **Reliquary** (elite) | *gilded alcoves holding sealed tomes, heavier gold, colder light* |
+| 08 | **The Scriptorium Throne** (boss) | *huge circular ink stain across the floor, a towering empty lectern, pages suspended mid-air* |
+| 09 | Spare — **Drying Room** | *sheets of vellum hung on lines overhead, soft diffuse light* |
+| 10 | Spare — **Ash Archive** | *burnt shelves, charred pages, embers in the corners* |
+
+Room 8 should read as the arena from your reference: the biggest ink stain in
+the game, because that ink is the boss.
+
+---
+
+## Adding a finished room
+
+1. Export at **1152 × 640**, PNG, with the floor exactly in the rectangle above.
+2. Save it as `assets/sprites/rooms/room_NN.png`.
+3. Add a line to `assets/sprites/rooms/layouts.json`:
+
+```json
+{ "name": "room_02", "image": "room_02.png", "source": "painted" }
+```
+
+4. Run `python3 pipeline/make_scenes.py`.
+
+That's it. Collision, doors, spawn points and object markers all come from the
+shared `framing` block, because the room conforms to it.
+
+**If a room can't hit the framing** — a different floor shape, say — it needs
+its own `room_NN.json` with a `floor_polygon`, in the same format
+`pipeline/room.py` writes. Prefer conforming; it's free.
