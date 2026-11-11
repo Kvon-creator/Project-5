@@ -42,7 +42,7 @@ func _start_bob() -> void:
 
 
 func _on_body_entered(body: Node2D) -> void:
-	if _taken or body is not Player:
+	if _taken or not (body is Player):
 		return
 	_taken = true
 	collected.emit()

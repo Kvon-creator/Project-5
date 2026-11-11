@@ -92,6 +92,62 @@ func take_hit(_source: String = "player") -> void:
 			pass   # traps are not destroyed by damage
 
 
+## The Defensive Tome Stack has taken its 5th hit.
+##
+## GDD: "Destructible cover - Blocks enemy bullets; breaks after 5 hits from
+## any source." Breaking means it stops blocking, so collision comes off
+## immediately rather than when the animation finishes - otherwise there is a
+## window where the cover looks gone but still eats bullets.
+func _break_cover() -> void:
+	if kind != Kind.COVER:
+		return
+	broke.emit(global_position)
+
+	# Stop blocking NOW. Deferred because a body may be mid-collision with it
+	# on this physics frame.
+	set_deferred("collision_layer", 0)
+	for child in get_children():
+		if child is CollisionShape2D or child is CollisionPolygon2D:
+			child.set_deferred("disabled", true)
+
+	_play_pages_burst()
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(sprite, "modulate:a", 0.0, 0.30)
+	tween.tween_property(sprite, "scale", sprite.scale * 0.92, 0.30)
+	tween.chain().tween_callback(queue_free)
+
+
+## A burst of manuscript pages. The cover IS a stack of tomes, so it comes
+## apart into paper - which also tells the player at a glance that this piece
+## of cover is gone rather than merely damaged.
+func _play_pages_burst(count: int = 8) -> void:
+	var parent := get_tree().current_scene
+	if parent == null:
+		return
+	for i in count:
+		var page := Polygon2D.new()
+		page.polygon = PackedVector2Array([
+			Vector2(-5, -4), Vector2(5, -4), Vector2(5, 4), Vector2(-5, 4)])
+		page.color = Palette.PARCHMENT
+		page.z_index = 5
+		parent.add_child(page)
+		page.global_position = global_position
+
+		var angle := TAU * (float(i) / count) + randf_range(-0.3, 0.3)
+		var distance := randf_range(26.0, 58.0)
+		var target := global_position + Vector2(cos(angle), sin(angle)) \
+				* distance
+
+		var tween := page.create_tween()
+		tween.set_parallel(true)
+		tween.tween_property(page, "global_position", target, 0.42) \
+				.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tween.tween_property(page, "rotation", randf_range(-3.0, 3.0), 0.42)
+		tween.tween_property(page, "modulate:a", 0.0, 0.42)
+		tween.chain().tween_callback(page.queue_free)
+
+
 ## Called by take_hit, and directly by Shockwave.
 ## GDD cross-link, Daryl -> K'von (new): "Barrels inside the 150 px radius
 ## detonate at once, and the 50 px knockback can push enemies onto traps."

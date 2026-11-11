@@ -237,7 +237,7 @@ func pick_spawn_point(from_position: Vector2) -> Vector2:
 	var valid: Array[Vector2] = []
 
 	for marker in spawn_markers.get_children():
-		if marker is not Node2D:
+		if not (marker is Node2D):
 			continue
 		var p: Vector2 = (marker as Node2D).global_position
 		var d := p.distance_to(from_position)

@@ -29,14 +29,22 @@ signal hit_player(damage: int)
 
 ## Set by GrazeMeter when this bullet has paid out. GDD: "Each bullet can be
 ## grazed once."
-var grazed: bool = false:
+## Backing field. A property setter must never assign to its OWN property:
+## in Godot 4 that re-enters the setter and recurses until the stack blows.
+## The first version of this did exactly that, so the first grazed bullet
+## would have crashed the game inside Daryl's core mechanic.
+var _grazed: bool = false
+
+var grazed: bool:
+	get:
+		return _grazed
 	set(value):
-		if value and not grazed:
-			grazed = true
+		if value == _grazed:
+			return
+		_grazed = value
+		if value:
 			_show_grazed()
 			grazed_once.emit()
-		else:
-			grazed = value
 
 var direction: Vector2 = Vector2.RIGHT
 

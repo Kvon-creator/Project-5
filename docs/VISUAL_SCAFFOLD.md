@@ -99,9 +99,18 @@ The GDD's pipeline, implemented:
 > AnimatedSprite2D
 
 ```bash
-./pipeline/render_all.sh        # renders everything, ~10 min
-python3 pipeline/check_anchor.py # measures it against the anchor asset
+./pipeline/render_all.sh          # renders everything, ~10 min
+python3 pipeline/check_anchor.py  # measures it against the anchor asset
+python3 pipeline/check_gdscript.py  # static check on every .gd
 ```
+
+`check_gdscript.py` exists because this project's art is built on a machine
+with no Godot, so a script that calls a helper nobody wrote survives until
+someone opens the editor — and Godot reports only the FIRST parse error, so
+those surface one at a time, one round trip each. It catches calls to
+undefined private methods, emits of undeclared signals, property setters that
+assign to their own property (infinite recursion in Godot 4), mixed
+indentation and unbalanced brackets.
 
 | File | What it makes |
 |---|---|
@@ -115,6 +124,7 @@ python3 pipeline/check_anchor.py # measures it against the anchor asset
 | `props.py` | Bullets, barrel, cover (3 damage stages), trap (armed/disarmed). |
 | `tiles.py` | **Retired.** Rooms are painted backgrounds now, not tiles. |
 | `check_anchor.py` | Measures any sprite: frame size, content bbox, palette drift. |
+| `check_gdscript.py` | Catches parse-level GDScript bugs without opening Godot. **Run it before you push.** |
 | `make_scenes.py` | Regenerates `scenes/*.tscn` from the sprites. |
 
 **If you change `rig_common.py`, re-render everything.** A mixed set — half the
