@@ -84,13 +84,223 @@
         464.1
       ]
     ],
-    "spec": "docs/ROOM_BRIEF.md"
+    "spec": "docs/ROOM_BRIEF.md",
+    "floor_centre": [
+      576.0,
+      372.5
+    ]
   },
   "rooms": [
     {
+      "name": "room_02",
+      "image": "room_02.png",
+      "source": "docs/reference/room-painted-interior.png via pipeline/cutout_refs.py",
+      "note": "Painted reference. Its floor is a trapezoid, so it overrides the shared framing. Anything not listed here falls back to `framing`.",
+      "floor_polygon": [
+        [
+          186,
+          264
+        ],
+        [
+          979,
+          264
+        ],
+        [
+          1136,
+          630
+        ],
+        [
+          34,
+          630
+        ]
+      ],
+      "floor_centre": [
+        576,
+        450
+      ],
+      "doors": {
+        "north": [
+          337,
+          264
+        ],
+        "north2": [
+          799,
+          264
+        ],
+        "west": [
+          112,
+          372
+        ],
+        "east": [
+          1052,
+          372
+        ]
+      },
+      "spawn_markers": [
+        [
+          300,
+          300
+        ],
+        [
+          576,
+          290
+        ],
+        [
+          850,
+          300
+        ],
+        [
+          230,
+          440
+        ],
+        [
+          920,
+          440
+        ],
+        [
+          576,
+          560
+        ]
+      ],
+      "object_markers": [
+        [
+          400,
+          360
+        ],
+        [
+          750,
+          360
+        ],
+        [
+          576,
+          430
+        ],
+        [
+          330,
+          520
+        ],
+        [
+          820,
+          520
+        ]
+      ]
+    },
+    {
       "name": "room_01",
       "image": "room_01.png",
-      "source": "blender"
+      "source": "blender",
+      "standin": true,
+      "note": "Blender stand-in on the shared framing. Drawn only once every painted room has been used."
+    },
+    {
+      "name": "room_03",
+      "image": "room_03.png",
+      "source": "docs/reference/room-boss-arena-pixel.png via pipeline/cutout_refs.py",
+      "boss": true,
+      "note": "The boss arena. Round floor, no exits - the run ends here.",
+      "floor_polygon": [
+        [
+          1044,
+          345
+        ],
+        [
+          1008,
+          436
+        ],
+        [
+          907,
+          513
+        ],
+        [
+          755,
+          565
+        ],
+        [
+          576,
+          583
+        ],
+        [
+          397,
+          565
+        ],
+        [
+          245,
+          513
+        ],
+        [
+          144,
+          436
+        ],
+        [
+          108,
+          345
+        ],
+        [
+          144,
+          254
+        ],
+        [
+          245,
+          177
+        ],
+        [
+          397,
+          125
+        ],
+        [
+          576,
+          107
+        ],
+        [
+          755,
+          125
+        ],
+        [
+          907,
+          177
+        ],
+        [
+          1008,
+          254
+        ]
+      ],
+      "floor_centre": [
+        576,
+        345
+      ],
+      "doors": {},
+      "spawn_markers": [
+        [
+          576,
+          215
+        ],
+        [
+          400,
+          260
+        ],
+        [
+          752,
+          260
+        ],
+        [
+          576,
+          470
+        ]
+      ],
+      "object_markers": [
+        [
+          420,
+          470
+        ],
+        [
+          732,
+          470
+        ],
+        [
+          576,
+          520
+        ]
+      ]
     }
   ]
 }

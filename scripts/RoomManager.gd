@@ -98,27 +98,92 @@ var layout_index: int = -1
 @onready var object_markers: Node2D = $ObjectMarkers
 @onready var doors: Node2D = $Doors
 @onready var enemies: Node2D = $Enemies
+@onready var objects: Node2D = $Objects
+
+## PREVIEW(K'von): the scenes the room spawns. Standard enemies are a coin
+## flip between the two standard species; the elite and boss are fixed.
+const ENEMY_SCENE: PackedScene = preload("res://scenes/Enemy.tscn")
+const OBJECT_SCENES: Array[PackedScene] = [
+	preload("res://scenes/Barrel.tscn"),
+	preload("res://scenes/Cover.tscn"),
+	preload("res://scenes/Trap.tscn"),
+]
+const STANDARD_SPECIES: Array[String] = ["snail", "hare"]
+const ELITE_SPECIES := "grotesque"
+const BOSS_SPECIES := "scribe"
+## A beat between the doors locking and the first wave, so the player sees
+## the room before it fills.
+const FIRST_WAVE_DELAY_SECONDS: float = 0.8
 
 
 func _ready() -> void:
 	Palette.check_no_magenta(self)
 	_refresh_door_visuals()
 	if layout_index < 0 and RoomLayouts.count() > 0:
-		load_layout(0)
+		# Something to look at before the run starts. Not marked used, or
+		# start_room would skip the first painted room.
+		load_layout(0, false)
 
 
 ## Show a layout. Because every room image conforms to the shared framing in
 ## docs/ROOM_BRIEF.md, the floor outline, doors and markers are the same for
 ## all of them - so this is only a texture swap. Nothing about collision or
 ## spawning has to change.
-func load_layout(index: int) -> void:
+func load_layout(index: int, mark_used: bool = true) -> void:
 	var tex := RoomLayouts.texture_for(index)
 	if tex == null:
 		return
 	layout_index = index
 	background.texture = tex
-	if index not in used_layouts:
+	_apply_geometry(RoomLayouts.geometry_for(index))
+	if mark_used and index not in used_layouts:
 		used_layouts.append(index)
+
+
+## Move the collision outline, door anchors and markers to where this layout
+## says they are. Rooms on the shared framing all give the same answer, so
+## for them this is a no-op in effect; a painted room with its own floor
+## shape gets its own geometry without any engine work.
+func _apply_geometry(g: Dictionary) -> void:
+	if g.is_empty():
+		return
+	if g.has("floor_polygon"):
+		var pts := PackedVector2Array()
+		for p in g["floor_polygon"]:
+			pts.append(Vector2(p[0], p[1]))
+		var shape := bounds.get_node_or_null("Shape") as CollisionPolygon2D
+		if shape:
+			shape.polygon = pts
+	if g.has("floor_centre"):
+		set_meta("floor_centre", Vector2(g["floor_centre"][0], g["floor_centre"][1]))
+	if g.has("doors"):
+		_sync_markers(doors, "Door", g["doors"])
+	if g.has("spawn_markers"):
+		_sync_markers(spawn_markers, "Spawn", g["spawn_markers"])
+	if g.has("object_markers"):
+		_sync_markers(object_markers, "ObjSpot", g["object_markers"])
+
+
+## Make `parent` hold exactly one Marker2D per entry, named prefix+key.
+## `entries` is a Dictionary (doors, keyed by name) or an Array (markers).
+func _sync_markers(parent: Node2D, prefix: String, entries: Variant) -> void:
+	var wanted: Dictionary = {}
+	if typeof(entries) == TYPE_DICTIONARY:
+		for key in entries.keys():
+			wanted[prefix + str(key).capitalize()] = Vector2(entries[key][0], entries[key][1])
+	else:
+		for i in entries.size():
+			wanted[prefix + str(i)] = Vector2(entries[i][0], entries[i][1])
+	for child in parent.get_children():
+		if not wanted.has(child.name):
+			child.queue_free()
+	for marker_name in wanted.keys():
+		var m := parent.get_node_or_null(NodePath(marker_name)) as Marker2D
+		if m == null:
+			m = Marker2D.new()
+			m.name = marker_name
+			parent.add_child(m)
+		m.position = wanted[marker_name]
 
 
 ## Pick and show a layout not yet used this run.
@@ -158,41 +223,146 @@ func wave_composition_for(room: int, _wave: int) -> Dictionary:
 func start_room(index: int) -> void:
 	room_index = index
 	wave_index = 0
-	# TODO(K'von): pick an unused layout id, load it, lock the doors, then
-	# start wave 0. Emit room_started(index).
-	#
-	# Built and ready to call:
-	#   load_unused_layout()        - swaps in a layout not used this run
-	#   lock_and_show(true)         - locks the doors
-	#   place_objects()             - the 1-3 interactive objects
-	load_unused_layout()
+	enemies_alive = 0
+	# PREVIEW(K'von): the simplest version of the GDD loop. Pick a layout,
+	# lock up, scatter objects, and start wave 0 after a short beat. Replace
+	# freely; the constants above are the balance, this is just the order.
+	for child in enemies.get_children():
+		child.queue_free()
+	for child in objects.get_children():
+		child.queue_free()
+	if index == BOSS_ROOM and RoomLayouts.boss_layout() >= 0:
+		load_layout(RoomLayouts.boss_layout())
+	else:
+		load_unused_layout()
 	lock_and_show(true)
+	place_objects()
 	room_started.emit(index)
+	get_tree().create_timer(FIRST_WAVE_DELAY_SECONDS).timeout.connect(start_next_wave)
 
 
 func start_next_wave() -> void:
-	# TODO(K'von): spawn wave_composition_for(room_index, wave_index) at
-	# markers that are at least MIN_SPAWN_DISTANCE_PX from the player.
-	# Increment enemies_alive per spawn and connect each enemy's died signal
-	# to _on_enemy_died.
-	pass
+	# PREVIEW(K'von): spawn the GDD composition at markers >= 200 px from the
+	# player, one marker per enemy where possible.
+	var comp := wave_composition_for(room_index, wave_index)
+	var species_list: Array[String] = []
+	for i in int(comp.get("standard", 0)):
+		species_list.append(STANDARD_SPECIES[randi() % STANDARD_SPECIES.size()])
+	for i in int(comp.get("elite", 0)):
+		species_list.append(ELITE_SPECIES)
+	for i in int(comp.get("boss", 0)):
+		species_list.append(BOSS_SPECIES)
+
+	var from := Vector2.ZERO
+	var gm := GameManager.instance
+	if gm and is_instance_valid(gm.player):
+		from = gm.player.global_position
+	var points := _spawn_points_far_from(from)
+	for i in species_list.size():
+		var at: Vector2 = points[i % points.size()]
+		if i >= points.size():   # more enemies than markers: fan out a little
+			at += Vector2(randf_range(-40, 40), randf_range(-30, 30))
+		if species_list[i] == BOSS_SPECIES and spawn_markers.get_child_count() > 0:
+			at = (spawn_markers.get_child(0) as Node2D).global_position   # the boss gets the stage
+		_spawn_enemy(species_list[i], at)
+
+	wave_started.emit(wave_index, wave_count_for(room_index))
 
 
-func _on_enemy_died() -> void:
-	# TODO(K'von): decrement enemies_alive. When it hits 0:
-	#   - if more waves remain, wait WAVE_DELAY_SECONDS then start_next_wave()
-	#   - otherwise emit room_cleared(room_index) and lock_and_show(false)
-	pass
+func _spawn_enemy(species: String, at: Vector2) -> void:
+	var e := ENEMY_SCENE.instantiate() as Enemy
+	e.species = species
+	e.global_position = at
+	e.died.connect(_on_enemy_died)
+	enemies.add_child(e)
+	enemies_alive += 1
+
+
+## Spawn markers at least MIN_SPAWN_DISTANCE_PX from `from`, shuffled; the
+## farthest few if none qualify, so spawning never fails.
+func _spawn_points_far_from(from: Vector2) -> Array[Vector2]:
+	var all_points: Array[Vector2] = []
+	for marker in spawn_markers.get_children():
+		if marker is Node2D:
+			all_points.append((marker as Node2D).global_position)
+	var far: Array[Vector2] = []
+	for p in all_points:
+		if p.distance_to(from) >= MIN_SPAWN_DISTANCE_PX:
+			far.append(p)
+	if far.is_empty():
+		all_points.sort_custom(func(a: Vector2, b: Vector2) -> bool:
+			return a.distance_to(from) > b.distance_to(from))
+		far = all_points.slice(0, maxi(1, all_points.size() / 2))
+	if far.is_empty():
+		far.append(floor_centre())
+	far.shuffle()
+	return far
+
+
+func _on_enemy_died(_enemy: Enemy = null) -> void:
+	# PREVIEW(K'von): count down; next wave after the GDD delay, or unlock.
+	enemies_alive = maxi(0, enemies_alive - 1)
+	if enemies_alive > 0:
+		return
+	wave_cleared.emit(wave_index)
+	wave_index += 1
+	if wave_index < wave_count_for(room_index):
+		get_tree().create_timer(WAVE_DELAY_SECONDS).timeout.connect(start_next_wave)
+	else:
+		lock_and_show(false)
+		room_cleared.emit(room_index)
 
 
 ## GDD cross-link, K'von to himself: "Each layout's 3-6 spawn markers decide
 ## where objects can appear, and every new room rolls new objects, so no two
 ## runs use the same setups."
 func place_objects() -> void:
-	# TODO(K'von): pick randi_range(OBJECTS_PER_ROOM_MIN,
-	# OBJECTS_PER_ROOM_MAX) markers from $ObjectMarkers, and instance a
-	# random Barrel / Cover / Trap at each.
-	pass
+	# PREVIEW(K'von): 1-3 distinct markers, a random object kind at each.
+	var spots: Array[Vector2] = []
+	for marker in object_markers.get_children():
+		if marker is Node2D:
+			spots.append((marker as Node2D).global_position)
+	spots.shuffle()
+	var count := mini(randi_range(OBJECTS_PER_ROOM_MIN, OBJECTS_PER_ROOM_MAX), spots.size())
+	for i in count:
+		var obj := OBJECT_SCENES[randi() % OBJECT_SCENES.size()].instantiate() as Node2D
+		obj.global_position = spots[i]
+		objects.add_child(obj)
+
+
+## The door anchor closest to `from`, as {"name": String, "position": Vector2}.
+func nearest_door(from: Vector2) -> Dictionary:
+	var best := {"name": "", "position": Vector2.ZERO, "distance": INF}
+	for door in doors.get_children():
+		if not (door is Node2D):
+			continue
+		var d := (door as Node2D).global_position.distance_to(from)
+		if d < best["distance"]:
+			best = {"name": String(door.name), "position": (door as Node2D).global_position, "distance": d}
+	return best
+
+
+## Where the player appears after walking through `door_name`: just inside the
+## opposite side of the new room, so the walk reads as continuing.
+func entry_point_opposite(door_name: String) -> Vector2:
+	var c := floor_centre()
+	var shape := bounds.get_node_or_null("Shape") as CollisionPolygon2D
+	var top := c.y - 150.0
+	var bottom := c.y + 150.0
+	var left := c.x - 380.0
+	var right := c.x + 380.0
+	if shape and shape.polygon.size() > 0:
+		top = INF; bottom = -INF; left = INF; right = -INF
+		for p in shape.polygon:
+			top = minf(top, p.y); bottom = maxf(bottom, p.y)
+			left = minf(left, p.x); right = maxf(right, p.x)
+	if door_name.begins_with("DoorNorth"):
+		return Vector2(c.x, bottom - 70.0)
+	if door_name.begins_with("DoorWest"):
+		return Vector2(right - 90.0, c.y)
+	if door_name.begins_with("DoorEast"):
+		return Vector2(left + 90.0, c.y)
+	return c
 
 
 # --------------------------------------------------------------------------

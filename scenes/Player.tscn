@@ -1,22 +1,27 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/Player.gd" id="s_player"]
 [ext_resource type="Script" path="res://scripts/GrazeMeter.gd" id="s_graze"]
 [ext_resource type="Script" path="res://scripts/Shockwave.gd" id="s_shock"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_SE.png" id="t_SE"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_E.png" id="t_E"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_NE.png" id="t_NE"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_N.png" id="t_N"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_NW.png" id="t_NW"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_W.png" id="t_W"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_SW.png" id="t_SW"]
-[ext_resource type="Texture2D" path="res://assets/sprites/player/player_idle_S.png" id="t_S"]
+[ext_resource type="Texture2D" path="res://assets/sprites/refs/hero.png" id="t_ref"]
+
+[sub_resource type="Gradient" id="Grad_shadow"]
+offsets = PackedFloat32Array(0, 0.55, 1)
+colors = PackedColorArray(0, 0, 0, 1, 0, 0, 0, 0.55, 0, 0, 0, 0)
+
+[sub_resource type="GradientTexture2D" id="Tex_shadow"]
+gradient = SubResource("Grad_shadow")
+width = 64
+height = 64
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(0.5, 0)
 
 [sub_resource type="SpriteFrames" id="SF_player"]
 animations = [{
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_SE")
+"texture": ExtResource("t_ref")
 }],
 "loop": true,
 "name": &"idle_SE",
@@ -24,7 +29,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_E")
+"texture": ExtResource("t_ref")
 }],
 "loop": true,
 "name": &"idle_E",
@@ -32,7 +37,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_NE")
+"texture": ExtResource("t_ref")
 }],
 "loop": true,
 "name": &"idle_NE",
@@ -40,7 +45,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_N")
+"texture": ExtResource("t_ref")
 }],
 "loop": true,
 "name": &"idle_N",
@@ -48,7 +53,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_NW")
+"texture": ExtResource("t_ref")
 }],
 "loop": true,
 "name": &"idle_NW",
@@ -56,7 +61,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_W")
+"texture": ExtResource("t_ref")
 }],
 "loop": true,
 "name": &"idle_W",
@@ -64,7 +69,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_SW")
+"texture": ExtResource("t_ref")
 }],
 "loop": true,
 "name": &"idle_SW",
@@ -72,7 +77,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("t_S")
+"texture": ExtResource("t_ref")
 }],
 "loop": true,
 "name": &"idle_S",
@@ -90,10 +95,17 @@ collision_layer = 1
 collision_mask = 48
 script = ExtResource("s_player")
 
+[node name="Shadow" type="Sprite2D" parent="."]
+texture = SubResource("Tex_shadow")
+modulate = Color(0, 0, 0, 0.58)
+scale = Vector2(1.10, 0.36)
+position = Vector2(0, 2)
+z_index = -1
+
 [node name="Sprite" type="AnimatedSprite2D" parent="."]
 sprite_frames = SubResource("SF_player")
 animation = &"idle_SE"
-offset = Vector2(0, -9)
+offset = Vector2(0, -36)
 
 [node name="Hitbox" type="CollisionShape2D" parent="."]
 shape = SubResource("Sh_hit")

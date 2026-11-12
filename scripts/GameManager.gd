@@ -34,6 +34,11 @@ static var instance: GameManager
 var room_index: int = 1
 var is_run_over: bool = false
 
+## PREVIEW(K'von): after a clear, the next room starts when the player walks
+## up to a door. "Crossing the threshold starts the room."
+const DOOR_TRIGGER_PX: float = 44.0
+var _awaiting_door: bool = false
+
 @onready var player: Player = $Player
 @onready var room: RoomManager = $Room
 @onready var hud: CanvasLayer = $HUD
@@ -63,7 +68,29 @@ func start_run() -> void:
 	CombatRewards.reset_for_new_run()
 	run_started.emit()
 	room_changed.emit(room_index)
+	_awaiting_door = false
 	room.start_room(room_index)
+	# Stand the player on the floor of whichever layout came up.
+	player.global_position = room.floor_centre() + Vector2(0, 70)
+
+
+func _process(_delta: float) -> void:
+	if is_run_over or not _awaiting_door or not is_instance_valid(player):
+		return
+	var door := room.nearest_door(player.global_position)
+	if door["distance"] <= DOOR_TRIGGER_PX:
+		_advance_room(String(door["name"]))
+
+
+func _advance_room(through_door: String) -> void:
+	_awaiting_door = false
+	room_index += 1
+	room_changed.emit(room_index)
+	room.start_room(room_index)
+	player.global_position = room.entry_point_opposite(through_door)
+	var meter := player.get_node_or_null("GrazeMeter")
+	if meter:
+		meter.reset_for_new_room()
 
 
 func _on_room_cleared(_cleared_index: int) -> void:
@@ -77,13 +104,9 @@ func _on_room_cleared(_cleared_index: int) -> void:
 		win()
 		return
 
-	# TODO(K'von): advance to the next room. The doors are already unlocked
-	# by RoomManager; this should wait for the player to actually walk
-	# through one ("WASD to walk through a door. Crossing the threshold
-	# starts the room.") rather than teleporting them.
-	#   room_index += 1
-	#   room_changed.emit(room_index)
-	#   room.start_room(room_index)
+	# PREVIEW(K'von): wait for the player to walk to a door; _process does
+	# the actual advance.
+	_awaiting_door = true
 
 
 func _on_player_died() -> void:
@@ -106,6 +129,7 @@ func lose() -> void:
 	if is_run_over:
 		return
 	is_run_over = true
+	player.is_dead = true
 	player.play_death()
 	run_lost.emit()
 	hud.show_end_screen(false)

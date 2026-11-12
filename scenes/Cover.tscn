@@ -1,9 +1,21 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/EnvObject.gd" id="s_env"]
-[ext_resource type="Texture2D" path="res://assets/sprites/props/cover_intact.png" id="t_0"]
-[ext_resource type="Texture2D" path="res://assets/sprites/props/cover_cracked.png" id="t_1"]
-[ext_resource type="Texture2D" path="res://assets/sprites/props/cover_crumbling.png" id="t_2"]
+[ext_resource type="Texture2D" path="res://assets/sprites/refs/tome_1.png" id="t_0"]
+[ext_resource type="Texture2D" path="res://assets/sprites/refs/tome_2.png" id="t_1"]
+[ext_resource type="Texture2D" path="res://assets/sprites/refs/tome_3.png" id="t_2"]
+
+[sub_resource type="Gradient" id="Grad_shadow"]
+offsets = PackedFloat32Array(0, 0.55, 1)
+colors = PackedColorArray(0, 0, 0, 1, 0, 0, 0, 0.55, 0, 0, 0, 0)
+
+[sub_resource type="GradientTexture2D" id="Tex_shadow"]
+gradient = SubResource("Grad_shadow")
+width = 64
+height = 64
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(0.5, 0)
 
 [sub_resource type="RectangleShape2D" id="Sh"]
 size = Vector2(46, 30)
@@ -14,8 +26,16 @@ collision_mask = 15
 script = ExtResource("s_env")
 kind = 1
 
+[node name="Shadow" type="Sprite2D" parent="."]
+texture = SubResource("Tex_shadow")
+modulate = Color(0, 0, 0, 0.58)
+scale = Vector2(0.85, 0.30)
+position = Vector2(0, 2)
+z_index = -1
+
 [node name="Sprite" type="Sprite2D" parent="."]
 texture = ExtResource("t_0")
+offset = Vector2(0, -20)
 metadata/texture_intact = ExtResource("t_0")
 metadata/texture_cracked = ExtResource("t_1")
 metadata/texture_crumbling = ExtResource("t_2")

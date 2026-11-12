@@ -58,6 +58,7 @@ var trap_armed: bool = true
 ## art - nibs wet with violet ink. Purely visual; the damage has already been
 ## dealt by then.
 var _just_triggered: bool = false
+var _detonated: bool = false
 
 ## How long the triggered art shows before the plate goes back to disarmed.
 ## Shorter than TRAP_REARM_SECONDS, so the player sees three distinct states:
@@ -152,15 +153,27 @@ func _play_pages_burst(count: int = 8) -> void:
 ## GDD cross-link, Daryl -> K'von (new): "Barrels inside the 150 px radius
 ## detonate at once, and the 50 px knockback can push enemies onto traps."
 func detonate() -> void:
-	if kind != Kind.BARREL:
+	if kind != Kind.BARREL or _detonated:
 		return
+	_detonated = true
 	detonated.emit(global_position, BARREL_RADIUS_PX)
 	_play_explosion()
 
-	# TODO(K'von): deal BARREL_DAMAGE to every enemy within BARREL_RADIUS_PX,
-	# passing "barrel" as the damage source so CombatRewards pays the double
-	# energy. The player is in the blast too - the GDD does not exempt them.
-	# Chain reaction: other barrels in the radius should take_hit() as well.
+	# PREVIEW(K'von): the blast. "barrel" as the source so CombatRewards
+	# pays double; the player is in it too; other barrels chain.
+	var origin := global_position
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if e is Enemy and (e as Enemy).global_position.distance_to(origin) <= BARREL_RADIUS_PX:
+			(e as Enemy).apply_knockback(((e as Enemy).global_position - origin).normalized() * 30.0)
+			(e as Enemy).take_damage(BARREL_DAMAGE, "barrel")
+	var gm := GameManager.instance
+	if gm and is_instance_valid(gm.player) \
+			and gm.player.global_position.distance_to(origin) <= BARREL_RADIUS_PX:
+		gm.player.take_damage(BARREL_DAMAGE)
+	for o in get_tree().get_nodes_in_group("env_object"):
+		if o != self and o is EnvObject and (o as EnvObject).kind == Kind.BARREL \
+				and (o as EnvObject).global_position.distance_to(origin) <= BARREL_RADIUS_PX:
+			(o as EnvObject).detonate.call_deferred()
 
 
 func _on_body_entered(body: Node2D) -> void:
@@ -170,8 +183,11 @@ func _on_body_entered(body: Node2D) -> void:
 	_just_triggered = true
 	set_armed(false)
 
-	# TODO(K'von): deal TRAP_DAMAGE to `body`, with "trap" as the source.
-	# "15 damage to the enemy or player on it" - both, not just enemies.
+	# PREVIEW(K'von): "15 damage to the enemy or player on it" - both.
+	if body is Enemy:
+		(body as Enemy).take_damage(TRAP_DAMAGE, "trap")
+	elif body is Player:
+		(body as Player).take_damage(TRAP_DAMAGE)
 
 	# Built: the three-state visual and the re-arm clock.
 	await get_tree().create_timer(TRIGGERED_DISPLAY_SECONDS).timeout

@@ -91,9 +91,22 @@ func _fire() -> void:
 	#              Call EnvObject.detonate() on each.
 	#
 	# Player.tscn has no detection area for this on purpose: a one-shot
-	# radius query is cleaner than a permanent 150 px Area2D. Use
-	# get_tree().get_nodes_in_group(...) or a
-	# PhysicsShapeQueryParameters2D with a CircleShape2D of RADIUS_PX.
+	# radius query is cleaner than a permanent 150 px Area2D.
+	#
+	# PREVIEW(Daryl): exactly that, by group.
+	var origin := player.global_position
+	for b in get_tree().get_nodes_in_group("enemy_bullet"):
+		if b is Node2D and (b as Node2D).global_position.distance_to(origin) <= RADIUS_PX:
+			b.queue_free()
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if e is Enemy and (e as Enemy).global_position.distance_to(origin) <= RADIUS_PX:
+			var away := ((e as Enemy).global_position - origin).normalized()
+			(e as Enemy).apply_knockback(away * KNOCKBACK_PX)
+			(e as Enemy).take_damage(ENEMY_DAMAGE, "player")
+	for o in get_tree().get_nodes_in_group("env_object"):
+		if o is EnvObject and (o as EnvObject).kind == EnvObject.Kind.BARREL \
+				and (o as EnvObject).global_position.distance_to(origin) <= RADIUS_PX:
+			(o as EnvObject).detonate()
 
 	# Built: the 1 s window closes on its own, whatever the effects do.
 	await get_tree().create_timer(ACTIVATION_SECONDS).timeout

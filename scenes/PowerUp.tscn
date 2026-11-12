@@ -1,7 +1,7 @@
 [gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/PowerUp.gd" id="s_pu"]
-[ext_resource type="Texture2D" path="res://assets/sprites/props/powerup_shell.png" id="t_pu"]
+[ext_resource type="Texture2D" path="res://assets/sprites/refs/shell.png" id="t_pu"]
 
 [sub_resource type="CircleShape2D" id="Sh_pu"]
 radius = 16.0
@@ -13,6 +13,7 @@ script = ExtResource("s_pu")
 
 [node name="Sprite" type="Sprite2D" parent="."]
 texture = ExtResource("t_pu")
+offset = Vector2(0, -18)
 
 [node name="Shape" type="CollisionShape2D" parent="."]
 shape = SubResource("Sh_pu")

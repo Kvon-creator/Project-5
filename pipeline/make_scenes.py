@@ -56,6 +56,55 @@ ENEMY_SPRITE_OFFSET_Y = {"snail": -25, "hare": -10, "grotesque": -20,
 ENEMY_BULLET_RADIUS = 5
 PLAYER_BULLET_RADIUS = 4
 
+# Which sprite set the character and prop scenes use.
+#   "refs"    - the reference paintings, cut out by pipeline/cutout_refs.py.
+#               One side view per creature; the scripts mirror it for
+#               left-facing. This is the current look of the game.
+#   "blender" - the 8-direction renders from player.py / enemy.py / props.py.
+SPRITE_SET = "refs"
+
+# Per cut-out: where the sprite sits over the feet (y offset of its centre)
+# and the shadow ellipse under it, as a scale of the 64 px shadow texture.
+REF_SPRITES = {
+    "hero":      {"offset_y": -36, "shadow": (1.10, 0.36)},
+    "snail":     {"offset_y": -26, "shadow": (1.50, 0.42)},
+    "hare":      {"offset_y": -40, "shadow": (1.00, 0.32)},
+    "grotesque": {"offset_y": -44, "shadow": (1.70, 0.50)},
+    "scribe":    {"offset_y": -86, "shadow": (1.90, 0.60)},
+    "lamp_oil":  {"offset_y": -22, "shadow": (0.70, 0.25)},
+    "tome":      {"offset_y": -20, "shadow": (0.85, 0.30)},
+    "trap":      {"offset_y": -16, "shadow": None},
+    "shell":     {"offset_y": -18, "shadow": (0.80, 0.28)},
+}
+
+# The soft shadow every character and prop stands on: a radial gradient,
+# scaled per sprite into an ellipse. Two sub-resources.
+SHADOW_SUBS = [
+    '[sub_resource type="Gradient" id="Grad_shadow"]\n'
+    'offsets = PackedFloat32Array(0, 0.55, 1)\n'
+    'colors = PackedColorArray(0, 0, 0, 1, 0, 0, 0, 0.55, 0, 0, 0, 0)\n',
+    '[sub_resource type="GradientTexture2D" id="Tex_shadow"]\n'
+    'gradient = SubResource("Grad_shadow")\n'
+    'width = 64\nheight = 64\nfill = 1\n'
+    'fill_from = Vector2(0.5, 0.5)\nfill_to = Vector2(0.5, 0)\n',
+]
+
+
+def shadow_node(scale):
+    """The Shadow sprite node, or "" when the sprite has no shadow."""
+    if not scale:
+        return ""
+    return ('\n[node name="Shadow" type="Sprite2D" parent="."]\n'
+            'texture = SubResource("Tex_shadow")\n'
+            'modulate = Color(0, 0, 0, 0.58)\n'
+            'scale = Vector2(%.2f, %.2f)\n'
+            'position = Vector2(0, 2)\n'
+            'z_index = -1\n' % scale)
+
+
+def ref(name):
+    return rel("assets", "sprites", "refs", name + ".png")
+
 # Collision layer bits, matching [layer_names] in project.godot.
 L_PLAYER, L_ENEMY, L_PBULLET, L_EBULLET = 1, 2, 4, 8
 L_ENV, L_WALL, L_GRAZE, L_DOOR = 16, 32, 64, 128
@@ -138,14 +187,23 @@ def make_player():
                'path="res://scripts/GrazeMeter.gd" id="s_graze"]')
     ext.append('[ext_resource type="Script" '
                'path="res://scripts/Shockwave.gd" id="s_shock"]')
-    for i, d in enumerate(DIRECTIONS):
-        rid = "t_%s" % d
-        ext_ids[d] = rid
-        ext.append('[ext_resource type="Texture2D" path="%s" id="%s"]'
-                   % (rel("assets", "sprites", "player",
-                          "player_idle_%s.png" % d), rid))
+    if SPRITE_SET == "refs":
+        ext.append('[ext_resource type="Texture2D" path="%s" id="t_ref"]'
+                   % ref("hero"))
+        ext_ids = {d: "t_ref" for d in DIRECTIONS}
+        off_y = REF_SPRITES["hero"]["offset_y"]
+        shadow = shadow_node(REF_SPRITES["hero"]["shadow"])
+    else:
+        for i, d in enumerate(DIRECTIONS):
+            rid = "t_%s" % d
+            ext_ids[d] = rid
+            ext.append('[ext_resource type="Texture2D" path="%s" id="%s"]'
+                       % (rel("assets", "sprites", "player",
+                              "player_idle_%s.png" % d), rid))
+        off_y = PLAYER_SPRITE_OFFSET_Y
+        shadow = shadow_node((0.9, 0.3))
 
-    subs = [
+    subs = SHADOW_SUBS + [
         sprite_frames_block("SF_player", ext_ids),
         '[sub_resource type="CircleShape2D" id="Sh_hit"]\n'
         'radius = %d.0\n' % PLAYER_HITBOX_RADIUS,
@@ -161,7 +219,7 @@ def make_player():
 collision_layer = {L_PLAYER}
 collision_mask = {wall_env}
 script = ExtResource("s_player")
-
+{shadow}
 [node name="Sprite" type="AnimatedSprite2D" parent="."]
 sprite_frames = SubResource("SF_player")
 animation = &"idle_SE"
@@ -200,7 +258,7 @@ limit_top = 0
 limit_right = 1152
 limit_bottom = 640
 '''.format(L_PLAYER=L_PLAYER, L_GRAZE=L_GRAZE, L_EBULLET=L_EBULLET,
-           wall_env=L_WALL | L_ENV, off_y=PLAYER_SPRITE_OFFSET_Y)
+           wall_env=L_WALL | L_ENV, off_y=off_y, shadow=shadow)
 
     steps = len(ext) + len(subs) + 1
     write("Player.tscn",
@@ -223,19 +281,42 @@ def make_enemy():
     """
     ext = ['[ext_resource type="Script" '
            'path="res://scripts/Enemy.gd" id="s_enemy"]']
-    subs = []
+    subs = list(SHADOW_SUBS)
+    meta = []
     for tier in ("snail", "hare", "grotesque", "scribe"):
         ids = {}
-        for d in DIRECTIONS:
-            rid = "t_%s_%s" % (tier, d)
-            ids[d] = rid
+        if SPRITE_SET == "refs":
+            rid = "t_%s" % tier
             ext.append('[ext_resource type="Texture2D" path="%s" id="%s"]'
-                       % (rel("assets", "sprites", "enemy",
-                              "enemy_%s_idle_%s.png" % (tier, d)), rid))
+                       % (ref(tier), rid))
+            ids = {d: rid for d in DIRECTIONS}
+            off_y = REF_SPRITES[tier]["offset_y"]
+            shadow = REF_SPRITES[tier]["shadow"]
+        else:
+            for d in DIRECTIONS:
+                rid = "t_%s_%s" % (tier, d)
+                ids[d] = rid
+                ext.append('[ext_resource type="Texture2D" path="%s" id="%s"]'
+                           % (rel("assets", "sprites", "enemy",
+                                  "enemy_%s_idle_%s.png" % (tier, d)), rid))
+            off_y = ENEMY_SPRITE_OFFSET_Y[tier]
+            shadow = (1.2, 0.4)
         subs.append(sprite_frames_block("SF_%s" % tier, ids))
+        # One hitbox per species; shapes are shared resources, so sizing
+        # them at runtime would resize every enemy at once.
+        subs.append('[sub_resource type="CircleShape2D" id="Sh_%s"]\n'
+                    'radius = %d.0\n' % (tier, ENEMY_HITBOX_RADIUS[tier]))
+        meta.append('metadata/frames_%s = SubResource("SF_%s")' % (tier, tier))
+        meta.append('metadata/hitbox_%s = SubResource("Sh_%s")' % (tier, tier))
+        meta.append('metadata/offset_%s = %.1f' % (tier, off_y))
+        meta.append('metadata/shadow_%s = Vector2(%.2f, %.2f)' % ((tier,) + shadow))
 
     subs.append('[sub_resource type="CircleShape2D" id="Sh_enemy"]\n'
                 'radius = %d.0\n' % ENEMY_HITBOX_RADIUS["snail"])
+    first_off = (REF_SPRITES["snail"]["offset_y"] if SPRITE_SET == "refs"
+                 else ENEMY_SPRITE_OFFSET_Y["snail"])
+    first_shadow = (REF_SPRITES["snail"]["shadow"] if SPRITE_SET == "refs"
+                    else (1.2, 0.4))
 
     body = '''
 [node name="Enemy" type="CharacterBody2D"]
@@ -243,11 +324,8 @@ collision_layer = {L_ENEMY}
 collision_mask = {mask}
 script = ExtResource("s_enemy")
 species = "snail"
-metadata/frames_snail = SubResource("SF_snail")
-metadata/frames_hare = SubResource("SF_hare")
-metadata/frames_grotesque = SubResource("SF_grotesque")
-metadata/frames_scribe = SubResource("SF_scribe")
-
+{meta}
+{shadow}
 [node name="Sprite" type="AnimatedSprite2D" parent="."]
 sprite_frames = SubResource("SF_snail")
 animation = &"idle_SE"
@@ -263,7 +341,8 @@ path_desired_distance = 8.0
 target_desired_distance = 8.0
 avoidance_enabled = true
 '''.format(L_ENEMY=L_ENEMY, mask=L_WALL | L_ENV | L_PLAYER,
-           off_y=ENEMY_SPRITE_OFFSET_Y["snail"])
+           off_y=first_off, meta="\n".join(meta),
+           shadow=shadow_node(first_shadow))
 
     steps = len(ext) + len(subs) + 1
     write("Enemy.tscn",
@@ -300,8 +379,9 @@ shape = SubResource("Sh_b")
            r=ENEMY_BULLET_RADIUS, layer=L_EBULLET,
            mask=L_PLAYER | L_WALL | L_ENV))
 
-    write("PlayerBullet.tscn", '''[gd_scene load_steps=3 format=3]
+    write("PlayerBullet.tscn", '''[gd_scene load_steps=4 format=3]
 
+[ext_resource type="Script" path="res://scripts/PlayerBullet.gd" id="s_b"]
 [ext_resource type="Texture2D" path="{tex}" id="t_b"]
 
 [sub_resource type="CircleShape2D" id="Sh_b"]
@@ -310,6 +390,7 @@ radius = {r}.0
 [node name="PlayerBullet" type="Area2D"]
 collision_layer = {layer}
 collision_mask = {mask}
+script = ExtResource("s_b")
 
 [node name="Sprite" type="Sprite2D" parent="."]
 texture = ExtResource("t_b")
@@ -332,7 +413,8 @@ def make_env_objects():
     textures up by name, so the script never hard-codes an asset path and
     adding a damage stage is a scene edit, not a code edit.
     """
-    def scene(name, kind_value, shape, textures, layer, mask, extra=""):
+    def scene(name, kind_value, shape, textures, layer, mask, extra="",
+              look=None):
         ext = ['[ext_resource type="Script" '
                'path="res://scripts/EnvObject.gd" id="s_env"]']
         meta = []
@@ -341,36 +423,43 @@ def make_env_objects():
             ext.append('[ext_resource type="Texture2D" path="%s" id="%s"]'
                        % (path, rid))
             meta.append('metadata/%s = ExtResource("%s")' % (key, rid))
-        steps = len(ext) + 2
+        look = look or {"offset_y": 0, "shadow": None}
+        subs = (SHADOW_SUBS if look["shadow"] else []) + [shape]
+        steps = len(ext) + len(subs) + 1
         return ('[gd_scene load_steps=%d format=3]\n\n' % steps
-                + "\n".join(ext) + "\n\n" + shape
+                + "\n".join(ext) + "\n\n" + "\n".join(subs)
                 + '\n[node name="%s" type="StaticBody2D"]\n'
                   'collision_layer = %d\ncollision_mask = %d\n'
                   'script = ExtResource("s_env")\nkind = %d\n'
                   % (name, layer, mask, kind_value)
+                + shadow_node(look["shadow"])
                 + '\n[node name="Sprite" type="Sprite2D" parent="."]\n'
                 + 'texture = ExtResource("t_0")\n'
+                + 'offset = Vector2(0, %d)\n' % look["offset_y"]
                 + "\n".join(meta) + "\n"
                 + '\n[node name="Shape" type="CollisionShape2D" parent="."]\n'
                   'shape = SubResource("Sh")\n'
                 + extra)
 
     p = lambda n: rel("assets", "sprites", "props", n)
+    use_refs = SPRITE_SET == "refs"
 
     write("Barrel.tscn", scene(
         "Barrel", 0,
         '[sub_resource type="CircleShape2D" id="Sh"]\nradius = 11.0\n',  # flask base ~24 px across
-        [("texture_barrel", p("barrel.png"))],
-        L_ENV, L_PLAYER | L_ENEMY | L_PBULLET | L_EBULLET))
+        [("texture_barrel", ref("lamp_oil") if use_refs else p("barrel.png"))],
+        L_ENV, L_PLAYER | L_ENEMY | L_PBULLET | L_EBULLET,
+        look=REF_SPRITES["lamp_oil"] if use_refs else None))
 
     write("Cover.tscn", scene(
         "Cover", 1,
         '[sub_resource type="RectangleShape2D" id="Sh"]\n'
         'size = Vector2(46, 30)\n',   # tome stack footprint
-        [("texture_intact", p("cover_intact.png")),
-         ("texture_cracked", p("cover_cracked.png")),
-         ("texture_crumbling", p("cover_crumbling.png"))],
-        L_ENV, L_PLAYER | L_ENEMY | L_PBULLET | L_EBULLET))
+        [("texture_intact", ref("tome_1") if use_refs else p("cover_intact.png")),
+         ("texture_cracked", ref("tome_2") if use_refs else p("cover_cracked.png")),
+         ("texture_crumbling", ref("tome_3") if use_refs else p("cover_crumbling.png"))],
+        L_ENV, L_PLAYER | L_ENEMY | L_PBULLET | L_EBULLET,
+        look=REF_SPRITES["tome"] if use_refs else None))
 
     # A trap is walked ONTO, not collided with, so its root sits on NO
     # physics layer - otherwise the player and every enemy would be stopped
@@ -383,10 +472,13 @@ def make_env_objects():
         "Trap", 2,
         '[sub_resource type="RectangleShape2D" id="Sh"]\n'
         'size = Vector2(66, 44)\n',   # trap plate, foreshortened on Y
-        [("texture_armed", p("trap_armed.png")),
-         ("texture_disarmed", p("trap_disarmed.png")),
-         ("texture_triggered", p("trap_triggered.png"))],
+        # On the prop sheet the plate with short spikes is the retracted one,
+        # the tall clean spikes are armed, the bloodied spikes are triggered.
+        [("texture_armed", ref("trap_2") if use_refs else p("trap_armed.png")),
+         ("texture_disarmed", ref("trap_1") if use_refs else p("trap_disarmed.png")),
+         ("texture_triggered", ref("trap_3") if use_refs else p("trap_triggered.png"))],
         0, 0,
+        look=REF_SPRITES["trap"] if use_refs else None,
         extra='\n[node name="Trigger" type="Area2D" parent="."]\n'
               'collision_layer = 0\ncollision_mask = %d\n'
               '\n[node name="Shape" type="CollisionShape2D" parent="Trigger"]\n'
@@ -420,12 +512,15 @@ script = ExtResource("s_pu")
 
 [node name="Sprite" type="Sprite2D" parent="."]
 texture = ExtResource("t_pu")
+offset = Vector2(0, {off_y})
 
 [node name="Shape" type="CollisionShape2D" parent="."]
 shape = SubResource("Sh_pu")
 
 [connection signal="body_entered" from="." to="." method="_on_body_entered"]
-'''.format(tex=rel("assets", "sprites", "props", "powerup_shell.png"),
+'''.format(tex=(ref("shell") if SPRITE_SET == "refs"
+                else rel("assets", "sprites", "props", "powerup_shell.png")),
+           off_y=REF_SPRITES["shell"]["offset_y"] if SPRITE_SET == "refs" else 0,
            mask=L_PLAYER))
 
 

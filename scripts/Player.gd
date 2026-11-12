@@ -60,6 +60,18 @@ var aim_direction: Vector2 = Vector2(1, 1).normalized()
 
 var is_invulnerable: bool = false
 
+## Set by GameManager when the run is lost; the corpse stops taking input.
+var is_dead: bool = false
+
+## PREVIEW(Daryl): the bits movement and shooting need.
+const PLAYER_BULLET_SCENE: PackedScene = preload("res://scenes/PlayerBullet.tscn")
+## A short mercy window after a hit, so one bullet stream is not an instant
+## 10-hit death. Not in the GDD - a preview number, flagged for playtesting.
+const HIT_INVULNERABLE_SECONDS: float = 0.4
+var _shot_cooldown: float = 0.0
+var _hit_timer: float = 0.0
+var _anim_t: float = 0.0
+
 # --------------------------------------------------------------------------
 # Visual wiring - built, working, do not need changing to add mechanics
 # --------------------------------------------------------------------------
@@ -88,21 +100,59 @@ func _ready() -> void:
 	Palette.check_no_magenta(self)
 
 
-func _physics_process(_delta: float) -> void:
-	# Keep the sprite pointing where the player aims. This works now and is
-	# independent of whether movement is implemented, so Daryl can fill in
-	# the TODOs below without touching the visuals.
+func _physics_process(delta: float) -> void:
+	if is_dead:
+		velocity = Vector2.ZERO
+		return
+
+	# PREVIEW(Daryl): movement. Input.get_vector already normalises
+	# diagonals, so the GDD's 220 px/s holds in every direction.
+	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	velocity = input * MOVE_SPEED
+	move_and_slide()
+
+	# PREVIEW(Daryl): aim at the mouse.
+	var to_mouse := get_global_mouse_position() - global_position
+	if to_mouse.length_squared() > 1.0:
+		aim_direction = to_mouse.normalized()
 	_apply_facing(aim_direction)
 
-	# TODO(Daryl): read move_up/down/left/right, set velocity to the input
-	# direction * MOVE_SPEED, then move_and_slide().
-	# TODO(Daryl): set aim_direction from
-	# (get_global_mouse_position() - global_position).normalized().
-	# TODO(Daryl): while "shoot" is held, fire at SHOTS_PER_SECOND using a
-	# Timer or an accumulator; damage is SHOT_DAMAGE * damage_multiplier.
-	# Emit fired_shot(muzzle.global_position, aim_direction) so audio and
-	# muzzle flash hook on without this script knowing about them.
-	pass
+	# PREVIEW(Daryl): hold to fire at SHOTS_PER_SECOND.
+	_shot_cooldown -= delta
+	if Input.is_action_pressed("shoot") and _shot_cooldown <= 0.0:
+		_shot_cooldown = 1.0 / SHOTS_PER_SECOND
+		_fire()
+
+	_hit_timer = maxf(0.0, _hit_timer - delta)
+	_animate(delta, input.length_squared() > 0.01)
+
+
+## One shot: a PlayerBullet from just ahead of the knight, in Nib Teal.
+func _fire() -> void:
+	var bullet := PLAYER_BULLET_SCENE.instantiate()
+	var from := global_position + aim_direction * 18.0 + Vector2(0, -14)
+	bullet.global_position = from
+	bullet.set("direction", aim_direction)
+	# The boost can be read off either the local multiplier or the autoload;
+	# take the larger so it is never counted twice.
+	var mult := maxf(damage_multiplier, CombatRewards.damage_multiplier)
+	bullet.set("damage", int(round(SHOT_DAMAGE * mult)))
+	get_tree().current_scene.add_child(bullet)
+	fired_shot.emit(from, aim_direction)
+	# A tiny recoil squash so firing reads even without a muzzle flash.
+	var tween := create_tween()
+	tween.tween_property(sprite, "scale", Vector2(0.94, 1.06), 0.04)
+	tween.tween_property(sprite, "scale", Vector2.ONE, 0.08)
+
+
+## Breathing while still, a bob while walking. Visual only.
+func _animate(delta: float, moving: bool) -> void:
+	_anim_t += delta
+	if moving:
+		sprite.position.y = -absf(sin(_anim_t * 14.0)) * 3.0
+	else:
+		sprite.position.y = lerpf(sprite.position.y, 0.0, 0.3)
+		sprite.scale.y = lerpf(sprite.scale.y, 1.0 + 0.02 * sin(_anim_t * 2.5), 0.2)
 
 
 ## Snap a continuous aim vector to one of the 8 sprite directions.
@@ -136,6 +186,19 @@ func _apply_facing(v: Vector2) -> void:
 	var anim := "idle_%s" % dir_name
 	if sprite.sprite_frames and sprite.sprite_frames.has_animation(anim):
 		sprite.play(anim)
+	# The reference cut-out is one side view drawn facing right, so the
+	# left-facing names mirror it. The Blender set carries all 8 views and
+	# ignores this because each of its frames already faces the right way.
+	sprite.flip_h = dir_name in ["W", "NW", "SW"] and _single_view_sprites()
+
+
+## True when every direction shares one texture (the reference cut-outs).
+func _single_view_sprites() -> bool:
+	if sprite.sprite_frames == null:
+		return false
+	var a := sprite.sprite_frames.get_frame_texture("idle_E", 0)
+	var b := sprite.sprite_frames.get_frame_texture("idle_W", 0)
+	return a != null and a == b
 
 
 # --------------------------------------------------------------------------
@@ -146,7 +209,7 @@ func _apply_facing(v: Vector2) -> void:
 ## Taking damage also costs the Graze Meter 25 points, which GrazeMeter.gd
 ## handles by listening to took_damage.
 func take_damage(amount: int) -> void:
-	if is_invulnerable:
+	if is_invulnerable or is_dead or _hit_timer > 0.0:
 		return
 
 	# Built: the damage flash, in Blood Rust per the GDD palette table
@@ -154,16 +217,19 @@ func take_damage(amount: int) -> void:
 	_flash(Palette.DAMAGE_FLASH)
 	took_damage.emit(amount)
 
-	# TODO(Daryl): hp = clampi(hp - amount, 0, MAX_HP), emit hp_changed,
-	# and emit died when hp hits 0. GameManager listens for died and ends
-	# the run ("Lose: player HP reaches 0 in any room").
-	pass
+	# PREVIEW(Daryl): the HP maths.
+	hp = clampi(hp - amount, 0, MAX_HP)
+	hp_changed.emit(hp, MAX_HP)
+	_hit_timer = HIT_INVULNERABLE_SECONDS
+	if hp == 0:
+		died.emit()
 
 
 ## GDD: "Room-clear heal +10 HP, capped at 100 (proposed)".
 func heal_room_clear() -> void:
-	# TODO(Daryl): hp = mini(hp + ROOM_CLEAR_HEAL, MAX_HP); emit hp_changed.
-	pass
+	# PREVIEW(Daryl)
+	hp = mini(hp + ROOM_CLEAR_HEAL, MAX_HP)
+	hp_changed.emit(hp, MAX_HP)
 
 
 ## A one-shot colour pulse on the sprite. Used for damage, and reusable for

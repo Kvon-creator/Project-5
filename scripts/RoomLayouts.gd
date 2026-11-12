@@ -34,6 +34,39 @@ static func count() -> int:
 	return all().size()
 
 
+## The shared framing block: floor outline, doors and markers every room
+## conforms to unless its own entry overrides them.
+static func framing() -> Dictionary:
+	if not FileAccess.file_exists(MANIFEST_PATH):
+		return {}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(MANIFEST_PATH))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+	var f: Variant = parsed.get("framing", {})
+	return f if typeof(f) == TYPE_DICTIONARY else {}
+
+
+## One layout's manifest entry, or {} if out of range.
+static func entry(index: int) -> Dictionary:
+	var rooms := all()
+	if index < 0 or index >= rooms.size():
+		return {}
+	var e: Variant = rooms[index]
+	return e if typeof(e) == TYPE_DICTIONARY else {}
+
+
+## The geometry a layout actually uses: the shared framing, with any keys the
+## room's own entry overrides (a painted room whose floor is not the shared
+## rectangle lists its own floor_polygon, doors and markers).
+static func geometry_for(index: int) -> Dictionary:
+	var g := framing().duplicate(true)
+	var e := entry(index)
+	for key in ["floor_polygon", "floor_centre", "doors", "spawn_markers", "object_markers"]:
+		if e.has(key):
+			g[key] = e[key]
+	return g
+
+
 ## The background texture for one layout, or null if it will not load.
 static func texture_for(index: int) -> Texture2D:
 	var rooms := all()
@@ -55,10 +88,32 @@ static func draw_unused(used: Array) -> int:
 	var rooms := all()
 	if rooms.is_empty():
 		return -1
+	# Never draw the boss arena for an ordinary room, and keep the Blender
+	# stand-ins for after every painted room has been seen.
 	var available: Array[int] = []
+	var standins: Array[int] = []
 	for i in rooms.size():
-		if i not in used:
+		if i in used or _flag(rooms[i], "boss"):
+			continue
+		if _flag(rooms[i], "standin"):
+			standins.append(i)
+		else:
 			available.append(i)
+	if available.is_empty():
+		available = standins
 	if available.is_empty():
 		return randi() % rooms.size()
 	return available[randi() % available.size()]
+
+
+## The layout tagged `"boss": true`, or -1 if none is.
+static func boss_layout() -> int:
+	var rooms := all()
+	for i in rooms.size():
+		if _flag(rooms[i], "boss"):
+			return i
+	return -1
+
+
+static func _flag(entry: Variant, key: String) -> bool:
+	return typeof(entry) == TYPE_DICTIONARY and bool(entry.get(key, false))

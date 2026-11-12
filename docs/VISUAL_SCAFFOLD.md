@@ -8,6 +8,45 @@ Read this before you start on your mechanic.
 
 ---
 
+## Update, 12 Nov: the playable preview
+
+Everything below still holds, with these changes on top.
+
+**Every stub now has a `# PREVIEW(<owner>)` fill.** A few lines each, under
+the GDD constants, so the game can be played end to end: movement, aim,
+shooting (`PlayerBullet.gd` is new), HP, grazing through the existing
+`GrazeArea`, the Shockwave's effects, kill energy into the meter, barrel and
+trap damage, waves, door unlock, walking to a door to advance. They are
+deliberately plain. If you own the mechanic, replace the PREVIEW block; the
+constants, signals and visual calls around it are the contract.
+
+**The sprites are the reference paintings.** `pipeline/cutout_refs.py` keys
+each painting in `docs/reference/` out of its background and writes
+game-scale PNGs to `assets/sprites/refs/`. One side view per creature; the
+scripts mirror it for left-facing (`flip_h`, only when all 8 frame names
+share a texture, so the Blender set is unaffected). `pipeline/make_scenes.py`
+has a `SPRITE_SET` switch: `"refs"` (current) or `"blender"`. Sizes are
+bigger than the 64 px anchor on purpose; at 64 px the hare's bow vanishes.
+
+**Two painted rooms.** `room_02` is the painted interior, `room_03` the boss
+arena (with the boss, bullets and HUD that were painted into that reference
+cloned out). Their floors are not the shared rectangle, so `layouts.json`
+entries may now carry their own `floor_polygon`, `floor_centre`, `doors`,
+`spawn_markers` and `object_markers`; `RoomManager._apply_geometry` applies
+them. Rooms without overrides still use the shared framing. `room_01` is
+flagged `"standin"` and drawn only after the painted rooms; `room_03` is
+flagged `"boss"` and used only for room 8.
+
+**Shadows and life.** Every character and prop has a soft shadow ellipse
+(a `GradientTexture2D` the generator writes into each scene), idle
+breathing, a walk bob, and a squash on firing. No particles.
+
+**Verification lives in `tests/`.** `tests/Screenshot.tscn` instances
+`Main`, drives the knight with fake input through a wave and the boss room,
+and saves `build/shots/*.png`. See the README for the three commands.
+
+---
+
 ## The one-minute version
 
 ```

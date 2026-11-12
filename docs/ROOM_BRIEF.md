@@ -11,7 +11,13 @@ Miss the framing and someone has to author a collision polygon by hand.
 
 ---
 
-## The framing (non-negotiable)
+> **12 Nov:** a room that cannot hit this framing (the two painted
+> references don't) may list its own `floor_polygon`, `doors`,
+> `spawn_markers` and `object_markers` in `layouts.json`; see `room_02` and
+> `room_03` there. Hitting the framing is still the cheap path - it needs no
+> coordinates at all.
+
+## The framing (non-negotiable for rooms without overrides)
 
 Every room image is the same canvas with the floor in the same place. That's
 what lets all ten rooms share one collision polygon.

@@ -1,9 +1,9 @@
 [gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/EnvObject.gd" id="s_env"]
-[ext_resource type="Texture2D" path="res://assets/sprites/props/trap_armed.png" id="t_0"]
-[ext_resource type="Texture2D" path="res://assets/sprites/props/trap_disarmed.png" id="t_1"]
-[ext_resource type="Texture2D" path="res://assets/sprites/props/trap_triggered.png" id="t_2"]
+[ext_resource type="Texture2D" path="res://assets/sprites/refs/trap_2.png" id="t_0"]
+[ext_resource type="Texture2D" path="res://assets/sprites/refs/trap_1.png" id="t_1"]
+[ext_resource type="Texture2D" path="res://assets/sprites/refs/trap_3.png" id="t_2"]
 
 [sub_resource type="RectangleShape2D" id="Sh"]
 size = Vector2(66, 44)
@@ -16,6 +16,7 @@ kind = 2
 
 [node name="Sprite" type="Sprite2D" parent="."]
 texture = ExtResource("t_0")
+offset = Vector2(0, -16)
 metadata/texture_armed = ExtResource("t_0")
 metadata/texture_disarmed = ExtResource("t_1")
 metadata/texture_triggered = ExtResource("t_2")

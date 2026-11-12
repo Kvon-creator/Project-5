@@ -23,6 +23,8 @@ const DAMAGE: int = 10
 ## graze window is a real decision rather than a reflex, which is the whole
 ## point of Daryl's mechanic.
 const SPEED_PX_PER_SECOND: float = 260.0
+## PREVIEW(Jarman): a bullet that misses everything still has to go away.
+const LIFETIME_SECONDS: float = 4.0
 
 signal grazed_once
 signal hit_player(damage: int)
@@ -59,6 +61,8 @@ func _ready() -> void:
 	# Belt and braces on the palette rule: whatever the scene file says, an
 	# enemy bullet leaves here Hostile Magenta.
 	sprite.modulate = Palette.ENEMY_BULLET
+	z_index = 4
+	get_tree().create_timer(LIFETIME_SECONDS).timeout.connect(queue_free)
 
 
 func _physics_process(delta: float) -> void:
@@ -70,10 +74,13 @@ func _physics_process(delta: float) -> void:
 func _on_body_entered(body: Node2D) -> void:
 	if body is Player:
 		hit_player.emit(DAMAGE)
-		# TODO(Jarman): call body.take_damage(DAMAGE) and queue_free().
-		# Player.take_damage already handles the -25 meter penalty via its
-		# took_damage signal, so there is nothing to do here about grazing.
-	pass
+		# PREVIEW(Jarman). Player.take_damage already handles the -25 meter
+		# penalty via its took_damage signal.
+		(body as Player).take_damage(DAMAGE)
+	elif body is EnvObject:
+		# GDD: cover "breaks after 5 hits from any source".
+		(body as EnvObject).take_hit("enemy")
+	queue_free()
 
 
 ## A grazed bullet gets a faint Graze Gold core, so the player can see which

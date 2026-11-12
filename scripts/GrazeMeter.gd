@@ -61,7 +61,17 @@ func _ready() -> void:
 	# and getting that wiring right is the scaffold's job.
 	if player:
 		player.took_damage.connect(_on_player_took_damage)
+		# PREVIEW(Daryl): the cheap way described below - the GrazeArea on
+		# the player is exactly hitbox + 20 px, so anything entering it that
+		# has not hit is a graze.
+		if is_instance_valid(player.graze_area):
+			player.graze_area.area_entered.connect(_on_graze_area_entered)
 	meter_changed.emit(meter, METER_MAX)
+
+
+func _on_graze_area_entered(area: Area2D) -> void:
+	if area is EnemyBullet and not (area as EnemyBullet).grazed:
+		register_graze(area)
 
 
 func _physics_process(_delta: float) -> void:

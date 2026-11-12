@@ -101,10 +101,13 @@ func register_kill(enemy_type: String, killed_by: String,
 
 	energy_awarded.emit(energy, environmental)
 
-	# TODO(Jarman): add `energy` to the player's GrazeMeter, capped at 100.
-	# The GDD calls this out as a cross-link: "Combat Rewards adds kill energy
-	# to Daryl's Graze Meter, a second way to charge Shockwave."
-	# Reach it via the player's $GrazeMeter and call add_meter(energy).
+	# PREVIEW(Jarman): "Combat Rewards adds kill energy to Daryl's Graze
+	# Meter, a second way to charge Shockwave." add_meter caps at 100.
+	var gm := GameManager.instance
+	if gm and is_instance_valid(gm.player):
+		var meter := gm.player.get_node_or_null("GrazeMeter")
+		if meter:
+			meter.add_meter(energy)
 
 	# "still counts toward the every-5th-kill power-up" - so this runs for
 	# environmental kills too, which is why it sits outside the branch above.
