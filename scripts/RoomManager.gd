@@ -99,6 +99,13 @@ var layout_index: int = -1
 @onready var doors: Node2D = $Doors
 @onready var enemies: Node2D = $Enemies
 @onready var objects: Node2D = $Objects
+@onready var nav_region: NavigationRegion2D = $NavRegion
+
+## Enemy Adaptation reads this mesh: the floor outline minus every piece of
+## cover and every barrel, grown by the enemy radius. Rebaked whenever an
+## object breaks or blows up, so a cleared lane opens for the enemies too.
+const NAV_AGENT_RADIUS: float = 14.0
+var _floor_polygon: PackedVector2Array = PackedVector2Array()
 
 ## PREVIEW(K'von): the scenes the room spawns. Standard enemies are a coin
 ## flip between the two standard species; the elite and boss are fixed.
@@ -154,6 +161,7 @@ func _apply_geometry(g: Dictionary) -> void:
 		var shape := bounds.get_node_or_null("Shape") as CollisionPolygon2D
 		if shape:
 			shape.polygon = pts
+		_floor_polygon = pts
 	if g.has("floor_centre"):
 		set_meta("floor_centre", Vector2(g["floor_centre"][0], g["floor_centre"][1]))
 	if g.has("doors"):
@@ -237,6 +245,7 @@ func start_room(index: int) -> void:
 		load_unused_layout()
 	lock_and_show(true)
 	place_objects()
+	bake_navigation.call_deferred()   # objects must be in the tree first
 	room_started.emit(index)
 	get_tree().create_timer(FIRST_WAVE_DELAY_SECONDS).timeout.connect(start_next_wave)
 
@@ -328,6 +337,57 @@ func place_objects() -> void:
 		var obj := OBJECT_SCENES[randi() % OBJECT_SCENES.size()].instantiate() as Node2D
 		obj.global_position = spots[i]
 		objects.add_child(obj)
+		# a broken tome stack or a spent barrel is no longer an obstacle
+		if obj.has_signal("broke"):
+			obj.broke.connect(func(_at: Vector2) -> void: bake_navigation.call_deferred())
+		if obj.has_signal("detonated"):
+			obj.detonated.connect(func(_at: Vector2, _r: float) -> void: bake_navigation.call_deferred())
+		# an armed trap is routed around; a disarmed plate is just floor
+		if obj.has_signal("armed_changed"):
+			obj.armed_changed.connect(func(_armed: bool) -> void: bake_navigation.call_deferred())
+
+
+## Build the navigation mesh for the current floor and objects.
+## GDD, Enemy Adaptation: "Routes around walls and destructible cover while
+## chasing the player". Walls are the floor outline; cover, barrels and
+## armed traps are cut out as obstructions.
+func bake_navigation() -> void:
+	if not is_instance_valid(nav_region) or _floor_polygon.size() < 3:
+		return
+	var src := NavigationMeshSourceGeometryData2D.new()
+	src.add_traversable_outline(_floor_polygon)
+	for obj in get_tree().get_nodes_in_group("env_object"):
+		if not (obj is EnvObject) or not is_instance_valid(obj) or obj.is_queued_for_deletion():
+			continue
+		var e := obj as EnvObject
+		if e.kind == EnvObject.Kind.COVER and e.hits_taken >= EnvObject.COVER_HITS_TO_BREAK:
+			continue
+		var half := _obstacle_half_size(e)
+		if e.kind == EnvObject.Kind.TRAP:
+			if not e.trap_armed:
+				continue   # a disarmed plate is just floor
+			# GDD: "Steers clear of active hazards within 75 px" - the mesh
+			# keeps paths that far from an armed plate's edge.
+			half += Vector2.ONE * (Enemy.HAZARD_AVOID_PX - NAV_AGENT_RADIUS)
+		var c := e.global_position
+		src.add_obstruction_outline(PackedVector2Array([
+			c + Vector2(-half.x, -half.y), c + Vector2(half.x, -half.y),
+			c + Vector2(half.x, half.y), c + Vector2(-half.x, half.y)]))
+	var navpoly := NavigationPolygon.new()
+	navpoly.agent_radius = NAV_AGENT_RADIUS
+	NavigationServer2D.bake_from_source_geometry_data(navpoly, src)
+	nav_region.navigation_polygon = navpoly
+
+
+## The footprint of an object's collision shape, as a half size.
+func _obstacle_half_size(e: EnvObject) -> Vector2:
+	var shape_node := e.get_node_or_null("Shape") as CollisionShape2D
+	if shape_node and shape_node.shape is RectangleShape2D:
+		return (shape_node.shape as RectangleShape2D).size * 0.5
+	if shape_node and shape_node.shape is CircleShape2D:
+		var r: float = (shape_node.shape as CircleShape2D).radius
+		return Vector2(r, r)
+	return Vector2(16, 12)
 
 
 ## The door anchor closest to `from`, as {"name": String, "position": Vector2}.

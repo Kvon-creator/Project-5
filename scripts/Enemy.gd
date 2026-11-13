@@ -112,6 +112,13 @@ const DIRECTION_NAMES: Array[String] = [
 
 @onready var sprite: AnimatedSprite2D = $Sprite
 @onready var hitbox: CollisionShape2D = $Hitbox
+@onready var agent: NavigationAgent2D = $Agent
+
+## How far behind a piece of cover a ranged enemy stands, from its centre.
+const COVER_STANDOFF_PX: float = 38.0
+## How far outside the stand-off band a piece of cover may be and still
+## count as "in range".
+const COVER_RANGE_SLACK_PX: float = 60.0
 
 
 ## The GDD tier this creature counts as, for HP and for kill energy.
@@ -142,6 +149,10 @@ func _ready() -> void:
 	hp = max_hp
 	is_ranged = is_ranged or species in RANGED_SPECIES
 	add_to_group("enemy")
+	# Separation between enemies is done by hand below; the agent is used
+	# for its path only.
+	agent.avoidance_enabled = false
+	agent.radius = _hitbox_radius()
 	_apply_species_frames()
 	_apply_facing(facing)
 	hp_changed.emit(hp, max_hp)
@@ -169,7 +180,20 @@ func _physics_process(delta: float) -> void:
 	var speed: float = SPECIES_SPEED.get(species, 60.0)
 	var desired := Vector2.ZERO
 	if _target != Vector2.INF and global_position.distance_to(_target) > 6.0:
-		desired = (_target - global_position).normalized() * speed
+		# GDD: "Obstacle detection within 200 px; routes around walls and
+		# destructible cover while chasing the player". With an obstacle
+		# near, follow the baked path; otherwise a straight line is the path.
+		var step := _target
+		if (_obstacle_within(OBSTACLE_DETECTION_PX) or _hazard_within(OBSTACLE_DETECTION_PX)) \
+				and not agent.is_navigation_finished():
+			step = agent.get_next_path_position()
+		desired = (step - global_position).normalized() * speed
+	# GDD: "Steers clear of active hazards within 75 px". The mesh already
+	# routes around armed plates; this is the safety net for an enemy that
+	# was pushed, spawned or knocked next to one. Knockback is added
+	# separately below and is not steered, which is exactly how the player
+	# pushes an enemy onto a trap.
+	desired += _hazard_repulsion(desired) * speed
 	for other in get_tree().get_nodes_in_group("enemy"):
 		if other == self or not (other is Node2D):
 			continue
@@ -204,6 +228,98 @@ func _player() -> Player:
 	if gm and is_instance_valid(gm.player):
 		return gm.player
 	return null
+
+
+## Every intact piece of cover and every barrel still standing.
+func _obstacles() -> Array[EnvObject]:
+	var out: Array[EnvObject] = []
+	for o in get_tree().get_nodes_in_group("env_object"):
+		if not (o is EnvObject) or o.is_queued_for_deletion():
+			continue
+		var e := o as EnvObject
+		if e.kind == EnvObject.Kind.TRAP:
+			continue
+		if e.kind == EnvObject.Kind.COVER and e.hits_taken >= EnvObject.COVER_HITS_TO_BREAK:
+			continue
+		out.append(e)
+	return out
+
+
+func _obstacle_within(px: float) -> bool:
+	for e in _obstacles():
+		if e.global_position.distance_to(global_position) <= px:
+			return true
+	return false
+
+
+func _hazard_within(px: float) -> bool:
+	for h in _active_hazards():
+		if h.global_position.distance_to(global_position) <= px:
+			return true
+	return false
+
+
+## Armed traps only: a disarmed plate is safe to cross.
+func _active_hazards() -> Array[EnvObject]:
+	var out: Array[EnvObject] = []
+	for o in get_tree().get_nodes_in_group("hazard"):
+		if o is EnvObject and (o as EnvObject).trap_armed and not o.is_queued_for_deletion():
+			out.append(o as EnvObject)
+	return out
+
+
+## A unit-ish push away from every active hazard within HAZARD_AVOID_PX,
+## strongest at the plate's edge. When the hazard sits dead ahead the push
+## would only cancel the chase and leave the enemy standing, so part of it
+## is turned sideways - the same side each time for this enemy, so it does
+## not dither.
+func _hazard_repulsion(heading: Vector2) -> Vector2:
+	var push := Vector2.ZERO
+	var side := 1.0 if (get_instance_id() % 2 == 0) else -1.0
+	for h in _active_hazards():
+		var away := global_position - h.global_position
+		var d := away.length()
+		if d < 0.01 or d > HAZARD_AVOID_PX:
+			continue
+		var strength := (1.0 - d / HAZARD_AVOID_PX) * 1.6
+		var dir := away / d
+		if heading.length_squared() > 1.0 and dir.dot(heading.normalized()) < -0.6:
+			dir = (dir + dir.orthogonal() * side * 1.5).normalized()
+		push += dir * strength
+	return push
+
+
+## Nudge a destination off any active hazard, so a path never ends on one.
+func _clear_of_hazards(point: Vector2) -> Vector2:
+	for h in _active_hazards():
+		var away := point - h.global_position
+		if away.length() < HAZARD_AVOID_PX:
+			if away.length() < 0.01:
+				away = Vector2.RIGHT
+			point = h.global_position + away.normalized() * HAZARD_AVOID_PX
+	return point
+
+
+## GDD: ranged enemies stand "behind cover when cover is in range". Cover
+## counts as in range when it sits about a band-width from the player; the
+## spot is just behind it on the far side from the player. Nearest such
+## spot to this enemy wins. Returns Vector2.INF when no cover qualifies.
+func _cover_point(player_pos: Vector2, band: Array) -> Vector2:
+	var best := Vector2.INF
+	var best_d := INF
+	for e in _obstacles():
+		if e.kind != EnvObject.Kind.COVER:
+			continue
+		var to_cover := e.global_position - player_pos
+		var d := to_cover.length()
+		if d < float(band[0]) - COVER_RANGE_SLACK_PX or d > float(band[1]) + COVER_RANGE_SLACK_PX:
+			continue
+		var spot := e.global_position + to_cover.normalized() * COVER_STANDOFF_PX
+		var mine := global_position.distance_to(spot)
+		if mine < best_d:
+			best_d = mine
+			best = spot
+	return best
 
 
 func _hitbox_radius() -> float:
@@ -284,9 +400,15 @@ func _recalculate_path() -> void:
 		_target = Vector2.INF
 		return
 	if not is_ranged:
-		_target = player.global_position
+		_target = _clear_of_hazards(player.global_position)
+		agent.target_position = _target
 		return
 	var band := current_ranged_band()
+	var cover := _cover_point(player.global_position, band)
+	if cover != Vector2.INF:
+		_target = _clear_of_hazards(cover)
+		agent.target_position = _target
+		return
 	var to_me := global_position - player.global_position
 	var dist := to_me.length()
 	var mid: float = (float(band[0]) + float(band[1])) * 0.5
@@ -297,15 +419,17 @@ func _recalculate_path() -> void:
 	else:
 		var side := 1.0 if randf() < 0.5 else -1.0
 		_target = player.global_position + to_me.normalized().rotated(0.7 * side) * mid
-	# TODO(Jarman): Enemy Adaptation proper, due Dec 2:
-	#   - find walls and destructible cover within OBSTACLE_DETECTION_PX and
-	#     route around them while chasing the player
-	#   - find ACTIVE hazards within HAZARD_AVOID_PX and steer clear. This is
-	#     the rule that makes K'von's double-energy environmental kills a
-	#     skill check: "the double-energy environmental kills only happen
-	#     when the player lures or knocks enemies in"
-	#   - ranged enemies hold current_ranged_band() from the player, behind
-	#     cover when cover is in range
+	_target = _clear_of_hazards(_target)
+	agent.target_position = _target
+	# Enemy Adaptation, per the GDD, is the three pieces above:
+	#   - obstacles within OBSTACLE_DETECTION_PX -> follow the room's baked
+	#     navigation mesh (RoomManager.bake_navigation) instead of a line
+	#   - active hazards within HAZARD_AVOID_PX -> steered around, and never
+	#     chosen as a destination. Knockback is not steered, so "the
+	#     double-energy environmental kills only happen when the player lures
+	#     or knocks enemies in" holds.
+	#   - ranged enemies hold current_ranged_band(), behind cover when cover
+	#     is in range
 	#
 	# Enemy.tscn has a NavigationAgent2D ready for this; Room.tscn's walls
 	# are already baked into a navigation region.

@@ -8,6 +8,28 @@ Read this before you start on your mechanic.
 
 ---
 
+## Update, 13 Nov: Enemy Adaptation, per the GDD (branch `backup-game`)
+
+The three Dec 2 rules are in `Enemy.gd` and `RoomManager.gd`:
+
+- **Pathing.** `RoomManager.bake_navigation()` bakes a `NavigationPolygon`
+  from the room's floor outline minus every intact tome stack, every barrel
+  and every *armed* trap (grown to the 75 px clearance), and rebakes when
+  one breaks, blows up, or arms/disarms. An enemy with an obstacle or
+  hazard within `OBSTACLE_DETECTION_PX` (200) follows the agent's path;
+  otherwise a straight line is the path.
+- **Hazard avoidance.** Armed traps are routed around by the mesh, and
+  `_hazard_repulsion` is the safety net inside 75 px, turning sideways when
+  the plate is dead ahead so the enemy does not stall. Knockback is not
+  steered - that is how the player pushes an enemy onto a trap.
+- **Ranged positioning.** `_cover_point` puts a hare or the scribe just
+  behind a tome stack that sits about a band-width from the player; with no
+  cover in range it holds the band and drifts sideways inside it. The
+  boosted band and 1 s recalc from Combat Rewards still apply.
+
+`tests/Screenshot.tscn` now also runs a trap-between-enemy-and-knight
+scenario and prints whether the enemy avoided it and got past.
+
 ## Update, 12 Nov: the playable preview
 
 Everything below still holds, with these changes on top.
@@ -79,9 +101,9 @@ only thing added.
 | Bullet Grazing | Daryl Watkins-Mattocks | Nov 18 | `GrazeMeter.gd` | stub + visuals done |
 | Shockwave | Daryl Watkins-Mattocks | Nov 18 | `Shockwave.gd` | stub + ring visual done |
 | Room-Based Combat | K'von Gates | Nov 18 | `RoomManager.gd` | stub + room/doors done |
-| Combat Rewards | Jarman | Nov 18 | `CombatRewards.gd` | stub + timer done |
+| Combat Rewards | Jarman | Nov 18 | `CombatRewards.gd` | **done** (12 Nov) |
 | Environmental Combat | K'von Gates | Dec 2 | `EnvObject.gd` | stub + 3 objects done |
-| Enemy Adaptation | Jarman | Dec 2 | `Enemy.gd` | stub + sprites done |
+| Enemy Adaptation | Jarman | Dec 2 | `Enemy.gd` | **done** (13 Nov, `backup-game`) |
 
 Support scripts, same table:
 

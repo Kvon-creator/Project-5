@@ -10,12 +10,14 @@ graze enemy bullets to charge a Shockwave, beat the boss in room 8.
 
 ## Status
 
-**Playable preview** (branch `base-game`, 12 Nov). Open it and you can walk,
+**Playable, every GDD mechanic in** (branch `backup-game`, 13 Nov; `base-game`
+is the same without Enemy Adaptation). Open it and you can walk,
 aim, shoot, graze, fire the Shockwave, clear waves, walk through a door and
-reach the boss. Every mechanic from the GDD has a simple working version
-marked `# PREVIEW(<owner>)` in its script; those are placeholders for the
-owner to replace, not the final design. The GDD constants above them are
-untouched.
+reach the boss. Jarman's two mechanics (Combat Rewards, Enemy
+Adaptation) are implemented to the GDD. The other four have a simple working
+version marked `# PREVIEW(<owner>)` in their scripts; those are placeholders
+for the owner to replace, not the final design. The GDD constants above them
+are untouched. Content still short of the GDD: 3 room layouts of the 10.
 
 The characters and props are the **reference paintings themselves**, cut
 out and scaled by `pipeline/cutout_refs.py`; two of the rooms are the
