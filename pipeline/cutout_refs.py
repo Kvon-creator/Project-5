@@ -241,10 +241,15 @@ def repair_arena(im):
     # feathered edge lets the original show through near a region's border.
     # 1. player HUD, bottom-left corner <- the right corner, mirrored
     mirror_x(16, 540, 210, 636)
-    # 2. the teal shots, right of the axis <- the left side, mirrored
-    mirror_x(584, 284, 746, 576)
-    # 3. the hero himself, on the axis <- a quarter turn to the right,
-    #    which lands on plain ring floor (the left turn hits the central splash)
+    # 2. the teal shots, right of the axis <- the left side, mirrored. Wider
+    #    on the upper rows so the pink swirl's tail (x 746-800, y ~300-330)
+    #    goes too; narrower below, where the mirrored source would otherwise
+    #    pick up the hero.
+    mirror_x(584, 284, 810, 460)
+    mirror_x(584, 440, 746, 576)
+    # 3. the hero himself, on the axis <- a quarter turn to the right, which
+    #    now lands entirely on the floor cleaned in step 2 (the left turn
+    #    hits the central ink splash)
     rotate_clone(526, 430, 622, 566, -90)
     # 4. the boss and the swirls: clean bottom half over the top half
     n = h - cy
