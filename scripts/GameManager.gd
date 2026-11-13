@@ -39,6 +39,14 @@ var is_run_over: bool = false
 const DOOR_TRIGGER_PX: float = 44.0
 var _awaiting_door: bool = false
 
+## A little camera shake on big hits. Decays on its own; callers just add.
+var _shake: float = 0.0
+const SHAKE_DECAY_PER_SECOND: float = 22.0
+
+
+func shake(amount: float) -> void:
+	_shake = minf(_shake + amount, 18.0)
+
 @onready var player: Player = $Player
 @onready var room: RoomManager = $Room
 @onready var hud: CanvasLayer = $HUD
@@ -74,7 +82,13 @@ func start_run() -> void:
 	player.global_position = room.floor_centre() + Vector2(0, 70)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if is_instance_valid(camera):
+		if _shake > 0.0:
+			_shake = maxf(0.0, _shake - SHAKE_DECAY_PER_SECOND * delta)
+			camera.offset = Vector2(randf_range(-_shake, _shake), randf_range(-_shake, _shake))
+		else:
+			camera.offset = Vector2.ZERO
 	if is_run_over or not _awaiting_door or not is_instance_valid(player):
 		return
 	var door := room.nearest_door(player.global_position)

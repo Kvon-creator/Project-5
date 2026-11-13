@@ -183,14 +183,859 @@
           820,
           520
         ]
+      ],
+      "title": "The Scriptorium",
+      "fixtures": []
+    },
+    {
+      "name": "room_04",
+      "image": "room_04.png",
+      "title": "Night Scriptorium",
+      "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
+      "note": "Centre block of tomes: fight around it.",
+      "floor_polygon": [
+        [
+          186,
+          264
+        ],
+        [
+          979,
+          264
+        ],
+        [
+          1136,
+          630
+        ],
+        [
+          34,
+          630
+        ]
+      ],
+      "floor_centre": [
+        576,
+        450
+      ],
+      "doors": {
+        "north": [
+          337,
+          264
+        ],
+        "north2": [
+          799,
+          264
+        ],
+        "west": [
+          112,
+          372
+        ],
+        "east": [
+          1052,
+          372
+        ]
+      },
+      "spawn_markers": [
+        [
+          300,
+          300
+        ],
+        [
+          576,
+          290
+        ],
+        [
+          850,
+          300
+        ],
+        [
+          230,
+          440
+        ],
+        [
+          920,
+          440
+        ],
+        [
+          576,
+          560
+        ]
+      ],
+      "object_markers": [
+        [
+          400,
+          360
+        ],
+        [
+          750,
+          360
+        ],
+        [
+          576,
+          560
+        ],
+        [
+          330,
+          520
+        ],
+        [
+          820,
+          520
+        ]
+      ],
+      "fixtures": [
+        [
+          552,
+          440
+        ],
+        [
+          600,
+          440
+        ],
+        [
+          552,
+          476
+        ],
+        [
+          600,
+          476
+        ]
       ]
+    },
+    {
+      "name": "room_05",
+      "image": "room_05.png",
+      "title": "Mirrored Hall",
+      "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
+      "note": "Two tome walls make three lanes.",
+      "floor_polygon": [
+        [
+          966,
+          264
+        ],
+        [
+          173,
+          264
+        ],
+        [
+          16,
+          630
+        ],
+        [
+          1118,
+          630
+        ]
+      ],
+      "floor_centre": [
+        576,
+        450
+      ],
+      "doors": {
+        "north": [
+          815,
+          264
+        ],
+        "north2": [
+          353,
+          264
+        ],
+        "east": [
+          1040,
+          372
+        ],
+        "west": [
+          100,
+          372
+        ]
+      },
+      "spawn_markers": [
+        [
+          852,
+          300
+        ],
+        [
+          576,
+          290
+        ],
+        [
+          302,
+          300
+        ],
+        [
+          922,
+          440
+        ],
+        [
+          232,
+          440
+        ],
+        [
+          576,
+          560
+        ]
+      ],
+      "object_markers": [
+        [
+          576,
+          360
+        ],
+        [
+          576,
+          520
+        ],
+        [
+          300,
+          560
+        ],
+        [
+          850,
+          560
+        ],
+        [
+          576,
+          440
+        ]
+      ],
+      "fixtures": [
+        [
+          400,
+          360
+        ],
+        [
+          400,
+          400
+        ],
+        [
+          400,
+          440
+        ],
+        [
+          400,
+          480
+        ],
+        [
+          400,
+          520
+        ],
+        [
+          752,
+          360
+        ],
+        [
+          752,
+          400
+        ],
+        [
+          752,
+          440
+        ],
+        [
+          752,
+          480
+        ],
+        [
+          752,
+          520
+        ]
+      ]
+    },
+    {
+      "name": "room_06",
+      "image": "room_06.png",
+      "title": "Mossy Archive",
+      "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
+      "note": "Four pillars: cover everywhere, lines of sight nowhere.",
+      "floor_polygon": [
+        [
+          186,
+          264
+        ],
+        [
+          979,
+          264
+        ],
+        [
+          1136,
+          630
+        ],
+        [
+          34,
+          630
+        ]
+      ],
+      "floor_centre": [
+        576,
+        450
+      ],
+      "doors": {
+        "north": [
+          337,
+          264
+        ],
+        "north2": [
+          799,
+          264
+        ],
+        "west": [
+          112,
+          372
+        ],
+        "east": [
+          1052,
+          372
+        ]
+      },
+      "spawn_markers": [
+        [
+          300,
+          300
+        ],
+        [
+          576,
+          290
+        ],
+        [
+          850,
+          300
+        ],
+        [
+          230,
+          440
+        ],
+        [
+          920,
+          440
+        ],
+        [
+          576,
+          560
+        ]
+      ],
+      "object_markers": [
+        [
+          400,
+          360
+        ],
+        [
+          750,
+          360
+        ],
+        [
+          576,
+          430
+        ],
+        [
+          330,
+          520
+        ],
+        [
+          820,
+          520
+        ]
+      ],
+      "fixtures": [
+        [
+          300,
+          330
+        ],
+        [
+          850,
+          330
+        ],
+        [
+          250,
+          560
+        ],
+        [
+          900,
+          560
+        ]
+      ]
+    },
+    {
+      "name": "room_07",
+      "image": "room_07.png",
+      "title": "Ink-Flooded Stacks",
+      "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
+      "note": "A diagonal of tomes splits the room corner to corner.",
+      "floor_polygon": [
+        [
+          186,
+          264
+        ],
+        [
+          979,
+          264
+        ],
+        [
+          1136,
+          630
+        ],
+        [
+          34,
+          630
+        ]
+      ],
+      "floor_centre": [
+        576,
+        450
+      ],
+      "doors": {
+        "north": [
+          337,
+          264
+        ],
+        "north2": [
+          799,
+          264
+        ],
+        "west": [
+          112,
+          372
+        ],
+        "east": [
+          1052,
+          372
+        ]
+      },
+      "spawn_markers": [
+        [
+          300,
+          300
+        ],
+        [
+          576,
+          290
+        ],
+        [
+          850,
+          300
+        ],
+        [
+          230,
+          440
+        ],
+        [
+          920,
+          440
+        ],
+        [
+          576,
+          560
+        ]
+      ],
+      "object_markers": [
+        [
+          750,
+          360
+        ],
+        [
+          820,
+          520
+        ],
+        [
+          330,
+          560
+        ],
+        [
+          700,
+          460
+        ],
+        [
+          460,
+          560
+        ]
+      ],
+      "fixtures": [
+        [
+          380,
+          340
+        ],
+        [
+          460,
+          400
+        ],
+        [
+          540,
+          460
+        ],
+        [
+          620,
+          520
+        ]
+      ]
+    },
+    {
+      "name": "room_08",
+      "image": "room_08.png",
+      "title": "Candlelit Nave",
+      "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
+      "note": "A horseshoe at the back wall: enemies spawn inside it.",
+      "floor_polygon": [
+        [
+          966,
+          264
+        ],
+        [
+          173,
+          264
+        ],
+        [
+          16,
+          630
+        ],
+        [
+          1118,
+          630
+        ]
+      ],
+      "floor_centre": [
+        576,
+        450
+      ],
+      "doors": {
+        "north": [
+          815,
+          264
+        ],
+        "north2": [
+          353,
+          264
+        ],
+        "east": [
+          1040,
+          372
+        ],
+        "west": [
+          100,
+          372
+        ]
+      },
+      "spawn_markers": [
+        [
+          576,
+          300
+        ],
+        [
+          300,
+          320
+        ],
+        [
+          850,
+          320
+        ],
+        [
+          230,
+          440
+        ],
+        [
+          920,
+          440
+        ],
+        [
+          576,
+          560
+        ]
+      ],
+      "object_markers": [
+        [
+          752,
+          360
+        ],
+        [
+          402,
+          360
+        ],
+        [
+          576,
+          430
+        ],
+        [
+          822,
+          520
+        ],
+        [
+          332,
+          520
+        ]
+      ],
+      "fixtures": [
+        [
+          480,
+          330
+        ],
+        [
+          530,
+          330
+        ],
+        [
+          580,
+          330
+        ],
+        [
+          630,
+          330
+        ],
+        [
+          680,
+          330
+        ],
+        [
+          480,
+          370
+        ],
+        [
+          680,
+          370
+        ]
+      ]
+    },
+    {
+      "floor_polygon": [
+        [
+          1044,
+          345
+        ],
+        [
+          1008,
+          436
+        ],
+        [
+          907,
+          513
+        ],
+        [
+          755,
+          565
+        ],
+        [
+          576,
+          583
+        ],
+        [
+          397,
+          565
+        ],
+        [
+          245,
+          513
+        ],
+        [
+          144,
+          436
+        ],
+        [
+          108,
+          345
+        ],
+        [
+          144,
+          254
+        ],
+        [
+          245,
+          177
+        ],
+        [
+          397,
+          125
+        ],
+        [
+          576,
+          107
+        ],
+        [
+          755,
+          125
+        ],
+        [
+          907,
+          177
+        ],
+        [
+          1008,
+          254
+        ]
+      ],
+      "floor_centre": [
+        576,
+        345
+      ],
+      "doors": {},
+      "spawn_markers": [
+        [
+          576,
+          215
+        ],
+        [
+          330,
+          260
+        ],
+        [
+          820,
+          260
+        ],
+        [
+          300,
+          470
+        ],
+        [
+          850,
+          470
+        ],
+        [
+          576,
+          560
+        ]
+      ],
+      "object_markers": [
+        [
+          576,
+          345
+        ],
+        [
+          420,
+          520
+        ],
+        [
+          732,
+          520
+        ]
+      ],
+      "name": "room_09",
+      "image": "room_09.png",
+      "title": "Elite Court",
+      "elite": true,
+      "source": "room-boss-arena-pixel.png, graded in pipeline/cutout_refs.py",
+      "note": "The elite room (7). A ring of tomes around the sigil.",
+      "fixtures": [
+        [
+          726,
+          345
+        ],
+        [
+          651,
+          426
+        ],
+        [
+          501,
+          426
+        ],
+        [
+          426,
+          345
+        ],
+        [
+          501,
+          264
+        ],
+        [
+          651,
+          264
+        ]
+      ]
+    },
+    {
+      "name": "room_10",
+      "image": "room_10.png",
+      "title": "Dusk Scriptorium",
+      "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
+      "note": "Open floor, dim light. The plainest of the painted rooms.",
+      "floor_polygon": [
+        [
+          186,
+          264
+        ],
+        [
+          979,
+          264
+        ],
+        [
+          1136,
+          630
+        ],
+        [
+          34,
+          630
+        ]
+      ],
+      "floor_centre": [
+        576,
+        450
+      ],
+      "doors": {
+        "north": [
+          337,
+          264
+        ],
+        "north2": [
+          799,
+          264
+        ],
+        "west": [
+          112,
+          372
+        ],
+        "east": [
+          1052,
+          372
+        ]
+      },
+      "spawn_markers": [
+        [
+          300,
+          300
+        ],
+        [
+          576,
+          290
+        ],
+        [
+          850,
+          300
+        ],
+        [
+          230,
+          440
+        ],
+        [
+          920,
+          440
+        ],
+        [
+          576,
+          560
+        ]
+      ],
+      "object_markers": [
+        [
+          400,
+          360
+        ],
+        [
+          750,
+          360
+        ],
+        [
+          576,
+          430
+        ],
+        [
+          330,
+          520
+        ],
+        [
+          820,
+          520
+        ]
+      ],
+      "fixtures": []
     },
     {
       "name": "room_01",
       "image": "room_01.png",
       "source": "blender",
       "standin": true,
-      "note": "Blender stand-in on the shared framing. Drawn only once every painted room has been used."
+      "note": "Blender stand-in on the shared framing. Drawn only once every painted room has been used.",
+      "fixtures": []
     },
     {
       "name": "room_03",
@@ -300,7 +1145,8 @@
           576,
           520
         ]
-      ]
+      ],
+      "fixtures": []
     }
   ]
 }

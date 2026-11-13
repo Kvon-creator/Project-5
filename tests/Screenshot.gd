@@ -24,10 +24,12 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	_frame += 1
 	var vp := get_viewport()
-	if _frame > 650 and _frame < 740:
+	if _frame > 690 and _frame < 790:
 		_aim_at_nearest_enemy()
 	match _frame:
-		20:
+		8:
+			_layout_sweep()   # async, ~6 frames; restores room 1 before the first wave
+		30:
 			_shot("01_room")
 		70:
 			# the first wave has spawned; walk right and open fire to the right
@@ -68,19 +70,33 @@ func _process(_delta: float) -> void:
 		640:
 			_shot("06_boss_fight")
 			_report()
-		650:
+		600:
+			# phase check: drop the boss to 50% then 20% and watch the phases turn
+			for e in get_tree().get_nodes_in_group("enemy"):
+				if e.get("species") == "scribe":
+					e.set("hp", int(e.max_hp * 0.5)); e.take_damage(1)
+		620:
+			_boss_report("after 50%")
+		660:
+			for e in get_tree().get_nodes_in_group("enemy"):
+				if e.get("species") == "scribe":
+					e.set("hp", int(e.max_hp * 0.2)); e.take_damage(1)
+		680:
+			_boss_report("after 20%")
+		690:
 			# leave the boss one hit from death, and stand where the knight
 			# has a clear shot - the scribe takes cover now, which is right,
 			# but this is a test of the win screen, not of the cover.
 			for e in get_tree().get_nodes_in_group("enemy"):
 				e.set("hp", 1)
-				GameManager.instance.player.global_position = (e as Node2D).global_position + Vector2(0, 110)
-		740:
+				if e.get("species") == "scribe":
+					GameManager.instance.player.global_position = (e as Node2D).global_position + Vector2(0, 110)
+		790:
 			_shot("07_win")
 			var gm := GameManager.instance
 			print("[report] run_over=%s hud_end_visible=%s" % [
 				str(gm.is_run_over), str(gm.hud.end_screen.visible)])
-		750:
+		800:
 			get_tree().quit()
 
 
@@ -128,6 +144,8 @@ func _aim_at_nearest_enemy() -> void:
 	var best_d := INF
 	for e in get_tree().get_nodes_in_group("enemy"):
 		var d: float = (e as Node2D).global_position.distance_to(gm.player.global_position)
+		if e.get("species") == "scribe":
+			d = 0.0   # the boss is the target whenever it is alive
 		if d < best_d:
 			best_d = d
 			best = e
@@ -164,3 +182,36 @@ func _report() -> void:
 	print("[nav] mesh_polygons=%d outlines=%d path_points_per_enemy=%s" % [
 		navpoly.get_polygon_count() if navpoly else -1,
 		navpoly.get_outline_count() if navpoly else -1, str(paths)])
+
+
+## Load every layout once: it must apply, place its fixtures and bake.
+func _layout_sweep() -> void:
+	var gm := GameManager.instance
+	var lines: Array[String] = []
+	for i in RoomLayouts.count():
+		gm.room.load_layout(i, false)
+		gm.room.bake_navigation()
+		var navpoly: NavigationPolygon = gm.room.nav_region.navigation_polygon
+		lines.append("%s(%s fx=%d poly=%d)" % [RoomLayouts.entry(i).get("name", "?"), gm.room.layout_title,
+				gm.room.fixtures.get_child_count(), navpoly.get_polygon_count() if navpoly else -1])
+	print("[layouts] ", " ".join(lines))
+	# two of the new layouts, each given a frame to draw before capture
+	for pick in [["room_05", "04b_mirrored_hall"], ["room_09", "04c_elite_court"]]:
+		for i in RoomLayouts.count():
+			if RoomLayouts.entry(i).get("name", "") == pick[0]:
+				gm.room.load_layout(i, false)
+				gm.room.bake_navigation()
+		await get_tree().process_frame
+		await _shot(pick[1])
+	# back to the layout the run started in
+	gm.room.load_layout(gm.room.used_layouts[0] if gm.room.used_layouts.size() > 0 else 0, false)
+	gm.room.bake_navigation()
+
+
+func _boss_report(when: String) -> void:
+	for e in get_tree().get_nodes_in_group("enemy"):
+		if e.get("species") == "scribe":
+			print("[boss] %s: phase=%d hp=%d/%d minions=%d bullets=%d boss_bar_visible=%s label='%s'" % [
+				when, e.boss_phase, e.hp, e.max_hp, get_tree().get_nodes_in_group("enemy").size() - 1,
+				get_tree().get_nodes_in_group("enemy_bullet").size(),
+				str(GameManager.instance.hud.boss_box.visible), GameManager.instance.hud.boss_label.text])

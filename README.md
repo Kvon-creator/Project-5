@@ -17,7 +17,9 @@ reach the boss. Jarman's two mechanics (Combat Rewards, Enemy
 Adaptation) are implemented to the GDD. The other four have a simple working
 version marked `# PREVIEW(<owner>)` in their scripts; those are placeholders
 for the owner to replace, not the final design. The GDD constants above them
-are untouched. Content still short of the GDD: 3 room layouts of the 10.
+are untouched. All ten layouts are in (seven are graded, mirrored and
+fixture-shaped variants of the two painted references), and the boss has
+three phases.
 
 The characters and props are the **reference paintings themselves**, cut
 out and scaled by `pipeline/cutout_refs.py`; two of the rooms are the
@@ -36,7 +38,18 @@ Open `project.godot` in **Godot 4.4 or newer** (tested on 4.7.2).
 
 WASD to move, mouse to aim, hold left-click to fire, Q for the Shockwave
 once the graze meter is full. Clear the waves, walk up to a door, repeat;
-room 8 is the boss.
+room 7 is the Elite Court, room 8 is the Ink Scribe.
+
+**The boss.** 1,200 HP, three phases by health:
+
+| Phase | HP | Patterns |
+|---|---|---|
+| I | 100-66% | slow rings of 12, aimed three-shot between them |
+| II | 66-33% | + a two-armed ink spiral; opens by scribbling two hares into being, and again every 8 s (max 4) |
+| III | 33-0% | rings of 16, aimed five-shot, faster spiral, and a lunge every 5 s (15 damage) |
+
+Each phase change fires a ring, flashes the scribe, shakes the room, and
+gives it 0.8 s of invulnerability. Its minions die with it.
 
 Before pushing, run the checks that were run on every commit of this preview:
 

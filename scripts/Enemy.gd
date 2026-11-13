@@ -67,8 +67,30 @@ const MELEE_COOLDOWN_SECONDS: float = 1.0
 const MELEE_REACH_PX: float = 14.0        ## beyond the two hitboxes touching
 const FIRE_INTERVAL := {"hare": 1.4, "scribe": 2.5}
 const FIRE_RANGE_PX: float = 460.0
-const SCRIBE_RING_BULLETS: int = 12
 const SEPARATION_PX: float = 34.0         ## enemies shoulder each other apart
+
+# The boss fight. Not in the GDD beyond "1,200 HP" - this is the proposed
+# design. Three phases by HP; each adds a pattern and keeps the last.
+#   I   (100-66%)  slow rings of 12, aimed three-shot between them
+#   II  ( 66-33%)  + a two-armed ink spiral, + summons two hares at a time
+#   III ( 33-0%)   rings of 16, aimed five-shot, faster spiral, and a lunge
+const BOSS_PHASE_THRESHOLDS: Array[float] = [0.66, 0.33]
+const BOSS_FIRE_INTERVAL: Array[float] = [2.5, 2.2, 1.6]
+const BOSS_RING_BULLETS: Array[int] = [12, 12, 16]
+const BOSS_SPREAD_SHOTS: Array[int] = [3, 3, 5]
+const BOSS_SPIRAL_INTERVAL: Array[float] = [0.0, 0.12, 0.08]   ## 0 = no spiral
+const BOSS_SPIRAL_SECONDS: float = 2.0
+const BOSS_SPIRAL_REST_SECONDS: float = 1.4
+const BOSS_SPIRAL_STEP: float = 0.42
+const BOSS_SUMMON_INTERVAL: float = 8.0
+const BOSS_SUMMON_COUNT: int = 2
+const BOSS_MAX_MINIONS: int = 4
+const BOSS_LUNGE_INTERVAL: float = 5.0
+const BOSS_LUNGE_SPEED: float = 540.0
+const BOSS_LUNGE_SECONDS: float = 0.35
+const BOSS_LUNGE_DAMAGE: int = 15
+const BOSS_PHASE_INVULNERABLE_SECONDS: float = 0.8
+const BOSS_SPEED_BY_PHASE: Array[float] = [40.0, 50.0, 65.0]
 const ENEMY_BULLET_SCENE: PackedScene = preload("res://scenes/EnemyBullet.tscn")
 
 # --------------------------------------------------------------------------
@@ -77,6 +99,8 @@ const ENEMY_BULLET_SCENE: PackedScene = preload("res://scenes/EnemyBullet.tscn")
 
 signal died(enemy: Enemy)
 signal hp_changed(hp: int, max_hp: int)
+## Boss only: entered a new phase (1-based).
+signal phase_changed(phase: int)
 
 # --------------------------------------------------------------------------
 # State
@@ -105,6 +129,20 @@ var _fire_cooldown: float = 1.0      ## first shot comes after a beat, not on sp
 var _knockback: Vector2 = Vector2.ZERO
 var _volley: int = 0
 var _anim_t: float = 0.0
+
+## Boss state.
+var boss_phase: int = 1
+var _spiral_on: bool = false
+var _spiral_t: float = 0.0
+var _spiral_rest: float = 2.5
+var _spiral_tick: float = 0.0
+var _spiral_angle: float = 0.0
+var _summon_cd: float = BOSS_SUMMON_INTERVAL * 0.5
+var _lunge_cd: float = BOSS_LUNGE_INTERVAL * 0.6
+var _lunge_t: float = 0.0
+var _lunge_dir: Vector2 = Vector2.ZERO
+var _lunge_hit: bool = false
+var _phase_invulnerable: float = 0.0
 
 const DIRECTION_NAMES: Array[String] = [
 	"SE", "E", "NE", "N", "NW", "W", "SW", "S"
@@ -174,10 +212,15 @@ func _physics_process(delta: float) -> void:
 		_path_timer = current_path_recalc_interval()
 		_recalculate_path()
 
+	var player := _player()
+	if species == "scribe" and _boss_process(delta, player):
+		return   # mid-lunge: nothing else this frame
+
 	# PREVIEW(Jarman): move straight at the target, shoulder other enemies
 	# aside, carry any knockback, and let move_and_slide handle the walls.
-	var player := _player()
 	var speed: float = SPECIES_SPEED.get(species, 60.0)
+	if species == "scribe":
+		speed = BOSS_SPEED_BY_PHASE[boss_phase - 1]
 	var desired := Vector2.ZERO
 	if _target != Vector2.INF and global_position.distance_to(_target) > 6.0:
 		# GDD: "Obstacle detection within 200 px; routes around walls and
@@ -219,8 +262,114 @@ func _physics_process(delta: float) -> void:
 			_melee(player)
 		if is_ranged and _fire_cooldown <= 0.0 and dist <= FIRE_RANGE_PX:
 			_fire_cooldown = float(FIRE_INTERVAL.get(species, 1.5))
+			if species == "scribe":
+				_fire_cooldown = BOSS_FIRE_INTERVAL[boss_phase - 1]
 			_shoot(player)
 	_animate(delta)
+
+
+# --------------------------------------------------------------------------
+# The boss - phases, spiral, summons, lunge
+# --------------------------------------------------------------------------
+
+## Runs the boss-only clocks. Returns true when the boss is mid-lunge and
+## has already moved this frame.
+func _boss_process(delta: float, player: Player) -> bool:
+	_phase_invulnerable = maxf(0.0, _phase_invulnerable - delta)
+	if player == null or player.is_dead:
+		return false
+
+	# lunge (phase III)
+	if _lunge_t > 0.0:
+		_lunge_t -= delta
+		velocity = _lunge_dir * BOSS_LUNGE_SPEED
+		move_and_slide()
+		if not _lunge_hit and global_position.distance_to(player.global_position) \
+				<= _hitbox_radius() + 8.0 + MELEE_REACH_PX:
+			_lunge_hit = true
+			player.take_damage(BOSS_LUNGE_DAMAGE)
+		_animate(delta)
+		return true
+	if boss_phase >= 3:
+		_lunge_cd -= delta
+		if _lunge_cd <= 0.0:
+			_lunge_cd = BOSS_LUNGE_INTERVAL
+			_lunge_t = BOSS_LUNGE_SECONDS
+			_lunge_hit = false
+			_lunge_dir = (player.global_position - global_position).normalized()
+			facing = _lunge_dir
+			var tween := create_tween()
+			tween.tween_property(sprite, "scale", Vector2(0.8, 1.25), 0.08)
+			tween.tween_property(sprite, "scale", Vector2.ONE, 0.2)
+
+	# spiral (phase II+)
+	var spiral_interval := BOSS_SPIRAL_INTERVAL[boss_phase - 1]
+	if spiral_interval > 0.0:
+		if _spiral_on:
+			_spiral_t -= delta
+			_spiral_tick -= delta
+			if _spiral_tick <= 0.0:
+				_spiral_tick = spiral_interval
+				_spiral_angle += BOSS_SPIRAL_STEP
+				_spawn_bullet(Vector2.RIGHT.rotated(_spiral_angle))
+				_spawn_bullet(Vector2.RIGHT.rotated(_spiral_angle + PI))
+			if _spiral_t <= 0.0:
+				_spiral_on = false
+				_spiral_rest = BOSS_SPIRAL_REST_SECONDS
+		else:
+			_spiral_rest -= delta
+			if _spiral_rest <= 0.0:
+				_spiral_on = true
+				_spiral_t = BOSS_SPIRAL_SECONDS
+
+	# summons (phase II+)
+	if boss_phase >= 2:
+		_summon_cd -= delta
+		if _summon_cd <= 0.0:
+			_summon_cd = BOSS_SUMMON_INTERVAL
+			_summon(player)
+	return false
+
+
+## Two hares scribbled into being, if there is room for them.
+func _summon(player: Player) -> void:
+	var gm := GameManager.instance
+	if gm == null or not is_instance_valid(gm.room):
+		return
+	var minions := get_tree().get_nodes_in_group("enemy").size() - 1
+	var points: Array[Vector2] = gm.room._spawn_points_far_from(player.global_position)
+	for i in BOSS_SUMMON_COUNT:
+		if minions >= BOSS_MAX_MINIONS or points.is_empty():
+			break
+		gm.room._spawn_enemy("hare", points[i % points.size()])
+		minions += 1
+	var tween := create_tween()
+	tween.tween_property(sprite, "modulate", Palette.CREATURE_VIOLET, 0.1)
+	tween.tween_property(sprite, "modulate", Color.WHITE, 0.3)
+
+
+## After damage: has the boss crossed into a new phase?
+func _check_phase() -> void:
+	var frac := float(hp) / float(max_hp)
+	var phase := 1
+	for t in BOSS_PHASE_THRESHOLDS:
+		if frac <= t:
+			phase += 1
+	if phase <= boss_phase:
+		return
+	boss_phase = phase
+	_phase_invulnerable = BOSS_PHASE_INVULNERABLE_SECONDS
+	phase_changed.emit(boss_phase)
+	if boss_phase == 2:
+		_summon_cd = 0.3   # phase II opens with the first summon
+	# a ring to mark the moment, a flash, and the room shakes
+	for i in BOSS_RING_BULLETS[boss_phase - 1]:
+		_spawn_bullet(Vector2.RIGHT.rotated(TAU * float(i) / BOSS_RING_BULLETS[boss_phase - 1]))
+	var tween := create_tween()
+	tween.tween_property(sprite, "modulate", Color(2.0, 2.0, 2.0), 0.08)
+	tween.tween_property(sprite, "modulate", Color.WHITE, 0.5)
+	if GameManager.instance:
+		GameManager.instance.shake(10.0)
 
 
 func _player() -> Player:
@@ -343,12 +492,15 @@ func _shoot(player: Player) -> void:
 	var aim := (player.global_position - global_position).normalized()
 	if species == "scribe":
 		_volley += 1
+		var ring := BOSS_RING_BULLETS[boss_phase - 1]
+		var spread := BOSS_SPREAD_SHOTS[boss_phase - 1]
 		if _volley % 2 == 1:
-			for i in SCRIBE_RING_BULLETS:
-				_spawn_bullet(Vector2.RIGHT.rotated(TAU * float(i) / SCRIBE_RING_BULLETS))
+			var offset := randf() * TAU / ring   # so rings never line up
+			for i in ring:
+				_spawn_bullet(Vector2.RIGHT.rotated(offset + TAU * float(i) / ring))
 		else:
-			for a in [-0.18, 0.0, 0.18]:
-				_spawn_bullet(aim.rotated(a))
+			for i in spread:
+				_spawn_bullet(aim.rotated((float(i) - (spread - 1) * 0.5) * 0.16))
 	else:
 		_spawn_bullet(aim)
 	var tween := create_tween()
@@ -443,7 +595,7 @@ func _recalculate_path() -> void:
 ## `source` is "player", "barrel" or "trap" - whatever dealt the blow. It is
 ## recorded so CombatRewards can apply the double-energy rule on death.
 func take_damage(amount: int, source: String = "player") -> void:
-	if _is_dying:
+	if _is_dying or _phase_invulnerable > 0.0:
 		return
 	killed_by = source
 	_flash(Palette.DAMAGE_FLASH)
@@ -453,6 +605,8 @@ func take_damage(amount: int, source: String = "player") -> void:
 	hp_changed.emit(hp, max_hp)
 	if hp == 0:
 		die()
+	elif species == "scribe":
+		_check_phase()
 
 
 func die() -> void:

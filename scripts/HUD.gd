@@ -32,12 +32,21 @@ extends CanvasLayer
 
 var _meter_full: bool = false
 
+## Added at runtime so HUD.tscn stays as generated: the wave counter under
+## the room label, and the boss bar across the top.
+var wave_label: Label
+var boss_box: VBoxContainer
+var boss_bar: ProgressBar
+var boss_label: Label
+var _boss: Enemy
+
 
 func _ready() -> void:
 	end_screen.visible = false
 	boost_bar.visible = false
 	shockwave_hint.visible = false
 	end_button.pressed.connect(_on_restart_pressed)
+	_build_extras()
 	_connect_sources.call_deferred()
 
 
@@ -48,6 +57,10 @@ func _connect_sources() -> void:
 	if gm:
 		gm.room_changed.connect(set_room)
 		set_room(gm.room_index)
+		if is_instance_valid(gm.room):
+			gm.room.wave_started.connect(set_wave)
+			gm.room.room_started.connect(func(_i: int) -> void: set_wave(-1, 0))
+			gm.room.boss_spawned.connect(show_boss)
 
 		if is_instance_valid(gm.player):
 			gm.player.hp_changed.connect(set_hp)
@@ -92,6 +105,61 @@ func set_meter(value: int, max_value: int) -> void:
 	var tween := create_tween()
 	tween.tween_property(meter_bar, "value", float(value), 0.12)
 	meter_label.text = "GRAZE  %d / %d" % [value, max_value]
+
+
+func _build_extras() -> void:
+	wave_label = Label.new()
+	wave_label.name = "WaveLabel"
+	wave_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	wave_label.add_theme_color_override("font_color", Palette.PARCHMENT)
+	wave_label.add_theme_font_size_override("font_size", 14)
+	room_label.get_parent().add_child(wave_label)
+
+	boss_box = VBoxContainer.new()
+	boss_box.name = "BossBox"
+	boss_box.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	boss_box.offset_left = -220
+	boss_box.offset_right = 220
+	boss_box.offset_top = 14
+	boss_box.visible = false
+	boss_label = Label.new()
+	boss_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_label.add_theme_color_override("font_color", Palette.PARCHMENT)
+	boss_label.add_theme_font_size_override("font_size", 15)
+	boss_bar = ProgressBar.new()
+	boss_bar.custom_minimum_size = Vector2(440, 14)
+	boss_bar.show_percentage = false
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Palette.BLOOD_RUST
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.07, 0.05, 0.1, 0.85)
+	boss_bar.add_theme_stylebox_override("fill", fill)
+	boss_bar.add_theme_stylebox_override("background", bg)
+	boss_box.add_child(boss_label)
+	boss_box.add_child(boss_bar)
+	$Root.add_child(boss_box)
+
+
+func set_wave(index: int, count: int) -> void:
+	wave_label.text = "" if index < 0 else "WAVE  %d / %d" % [index + 1, count]
+
+
+func show_boss(boss: Enemy) -> void:
+	_boss = boss
+	boss_box.visible = true
+	boss_bar.max_value = boss.max_hp
+	boss_bar.value = boss.hp
+	_set_boss_label(1)
+	boss.hp_changed.connect(func(hp: int, _max: int) -> void:
+		create_tween().tween_property(boss_bar, "value", float(hp), 0.15))
+	boss.died.connect(func(_e: Enemy) -> void: boss_box.visible = false)
+	if boss.has_signal("phase_changed"):
+		boss.phase_changed.connect(_set_boss_label)
+
+
+func _set_boss_label(phase: int) -> void:
+	const NUMERALS := ["I", "II", "III"]
+	boss_label.text = "THE INK SCRIBE   -   PHASE %s" % NUMERALS[clampi(phase - 1, 0, 2)]
 
 
 func set_room(index: int) -> void:

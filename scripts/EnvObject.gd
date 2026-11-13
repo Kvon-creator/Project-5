@@ -158,6 +158,8 @@ func detonate() -> void:
 	_detonated = true
 	detonated.emit(global_position, BARREL_RADIUS_PX)
 	_play_explosion()
+	if GameManager.instance:
+		GameManager.instance.shake(6.0)
 
 	# PREVIEW(K'von): the blast. "barrel" as the source so CombatRewards
 	# pays double; the player is in it too; other barrels chain.

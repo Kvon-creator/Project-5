@@ -71,6 +71,8 @@ signal wave_cleared(wave_index: int)
 @warning_ignore("unused_signal")
 signal room_cleared(room_index: int)
 signal doors_unlocked
+## The boss has been placed; the HUD puts up its bar.
+signal boss_spawned(boss: Enemy)
 
 # --------------------------------------------------------------------------
 # State
@@ -100,6 +102,10 @@ var layout_index: int = -1
 @onready var enemies: Node2D = $Enemies
 @onready var objects: Node2D = $Objects
 @onready var nav_region: NavigationRegion2D = $NavRegion
+## Fixed tome walls that shape a layout. Created on demand so Room.tscn
+## needs no change.
+var fixtures: Node2D
+var layout_title: String = ""
 
 ## Enemy Adaptation reads this mesh: the floor outline minus every piece of
 ## cover and every barrel, grown by the enemy radius. Rebaked whenever an
@@ -116,6 +122,12 @@ const OBJECT_SCENES: Array[PackedScene] = [
 	preload("res://scenes/Trap.tscn"),
 ]
 const STANDARD_SPECIES: Array[String] = ["snail", "hare"]
+## Room-by-room mix of the two standard species: early rooms lean melee so
+## the first fights are about grazing a few arrows, later ones lean ranged.
+const HARE_CHANCE_EARLY: float = 0.3     # rooms 1-2
+const HARE_CHANCE_MID: float = 0.5       # rooms 3-6
+const HARE_CHANCE_ELITE: float = 0.75    # room 7
+const FIXTURE_SCENE: PackedScene = preload("res://scenes/Fixture.tscn")
 const ELITE_SPECIES := "grotesque"
 const BOSS_SPECIES := "scribe"
 ## A beat between the doors locking and the first wave, so the player sees
@@ -125,6 +137,10 @@ const FIRST_WAVE_DELAY_SECONDS: float = 0.8
 
 func _ready() -> void:
 	Palette.check_no_magenta(self)
+	fixtures = Node2D.new()
+	fixtures.name = "Fixtures"
+	fixtures.y_sort_enabled = true
+	add_child(fixtures)
 	_refresh_door_visuals()
 	if layout_index < 0 and RoomLayouts.count() > 0:
 		# Something to look at before the run starts. Not marked used, or
@@ -170,6 +186,15 @@ func _apply_geometry(g: Dictionary) -> void:
 		_sync_markers(spawn_markers, "Spawn", g["spawn_markers"])
 	if g.has("object_markers"):
 		_sync_markers(object_markers, "ObjSpot", g["object_markers"])
+	layout_title = str(g.get("title", ""))
+	if is_instance_valid(fixtures):
+		for child in fixtures.get_children():
+			fixtures.remove_child(child)   # out of the tree now, so a bake this frame ignores it
+			child.queue_free()
+		for f in g.get("fixtures", []):
+			var wall := FIXTURE_SCENE.instantiate() as Node2D
+			wall.global_position = Vector2(f[0], f[1])
+			fixtures.add_child(wall)
 
 
 ## Make `parent` hold exactly one Marker2D per entry, named prefix+key.
@@ -236,11 +261,15 @@ func start_room(index: int) -> void:
 	# lock up, scatter objects, and start wave 0 after a short beat. Replace
 	# freely; the constants above are the balance, this is just the order.
 	for child in enemies.get_children():
+		enemies.remove_child(child)
 		child.queue_free()
 	for child in objects.get_children():
+		objects.remove_child(child)
 		child.queue_free()
 	if index == BOSS_ROOM and RoomLayouts.boss_layout() >= 0:
 		load_layout(RoomLayouts.boss_layout())
+	elif index == ELITE_ROOM and RoomLayouts.tagged_layout("elite") >= 0:
+		load_layout(RoomLayouts.tagged_layout("elite"))
 	else:
 		load_unused_layout()
 	lock_and_show(true)
@@ -255,8 +284,13 @@ func start_next_wave() -> void:
 	# player, one marker per enemy where possible.
 	var comp := wave_composition_for(room_index, wave_index)
 	var species_list: Array[String] = []
+	var hare_chance := HARE_CHANCE_MID
+	if room_index <= 2:
+		hare_chance = HARE_CHANCE_EARLY
+	elif room_index == ELITE_ROOM:
+		hare_chance = HARE_CHANCE_ELITE
 	for i in int(comp.get("standard", 0)):
-		species_list.append(STANDARD_SPECIES[randi() % STANDARD_SPECIES.size()])
+		species_list.append("hare" if randf() < hare_chance else "snail")
 	for i in int(comp.get("elite", 0)):
 		species_list.append(ELITE_SPECIES)
 	for i in int(comp.get("boss", 0)):
@@ -285,6 +319,8 @@ func _spawn_enemy(species: String, at: Vector2) -> void:
 	e.died.connect(_on_enemy_died)
 	enemies.add_child(e)
 	enemies_alive += 1
+	if species == BOSS_SPECIES:
+		boss_spawned.emit(e)
 
 
 ## Spawn markers at least MIN_SPAWN_DISTANCE_PX from `from`, shuffled; the
@@ -308,9 +344,15 @@ func _spawn_points_far_from(from: Vector2) -> Array[Vector2]:
 	return far
 
 
-func _on_enemy_died(_enemy: Enemy = null) -> void:
+func _on_enemy_died(enemy: Enemy = null) -> void:
 	# PREVIEW(K'von): count down; next wave after the GDD delay, or unlock.
 	enemies_alive = maxi(0, enemies_alive - 1)
+	# The boss's summoned minions die with it, so the win is not held up
+	# by a stray hare.
+	if enemy and enemy.species == BOSS_SPECIES:
+		for other in get_tree().get_nodes_in_group("enemy"):
+			if other != enemy and other is Enemy:
+				(other as Enemy).die()
 	if enemies_alive > 0:
 		return
 	wave_cleared.emit(wave_index)
@@ -370,6 +412,17 @@ func bake_navigation() -> void:
 			# keeps paths that far from an armed plate's edge.
 			half += Vector2.ONE * (Enemy.HAZARD_AVOID_PX - NAV_AGENT_RADIUS)
 		var c := e.global_position
+		src.add_obstruction_outline(PackedVector2Array([
+			c + Vector2(-half.x, -half.y), c + Vector2(half.x, -half.y),
+			c + Vector2(half.x, half.y), c + Vector2(-half.x, half.y)]))
+	for wall in get_tree().get_nodes_in_group("fixture"):
+		if not (wall is Node2D) or wall.is_queued_for_deletion():
+			continue
+		var shape_node := wall.get_node_or_null("Shape") as CollisionShape2D
+		var half := Vector2(23, 15)
+		if shape_node and shape_node.shape is RectangleShape2D:
+			half = (shape_node.shape as RectangleShape2D).size * 0.5
+		var c: Vector2 = (wall as Node2D).global_position
 		src.add_obstruction_outline(PackedVector2Array([
 			c + Vector2(-half.x, -half.y), c + Vector2(half.x, -half.y),
 			c + Vector2(half.x, half.y), c + Vector2(-half.x, half.y)]))

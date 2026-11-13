@@ -48,9 +48,20 @@ JOBS = [
     ("shell",     "props-sheet.png", "dark", 50, (785, 330, 1015, 515)),
 ]
 
-ROOM_JOBS = [  # painted rooms: just resize to the shared canvas
-    ("room_02", "room-painted-interior.png", (1152, 640)),
-    ("room_03", "room-boss-arena-pixel.png", (1152, 640)),
+# Painted rooms. The two references are the only paintings there are, so the
+# rest of the GDD's ten layouts are variants of them: a colour grade, an
+# optional mirror, and (in layouts.json) fixed tome walls that reshape the
+# floor. "mul" multiplies RGB, "gamma" darkens/brightens the midtones.
+ROOM_JOBS = [
+    ("room_02", "room-painted-interior.png", (1152, 640), {}),
+    ("room_03", "room-boss-arena-pixel.png", (1152, 640), {}),
+    ("room_04", "room-painted-interior.png", (1152, 640), {"mul": (0.72, 0.84, 1.18), "gamma": 1.08}),   # night
+    ("room_05", "room-painted-interior.png", (1152, 640), {"mirror": True, "mul": (1.10, 0.98, 0.88)}),  # mirrored, warm
+    ("room_06", "room-painted-interior.png", (1152, 640), {"mul": (0.84, 1.06, 0.80)}),                 # moss
+    ("room_07", "room-painted-interior.png", (1152, 640), {"mul": (0.92, 0.78, 1.08), "gamma": 1.18}),   # ink-flooded
+    ("room_08", "room-painted-interior.png", (1152, 640), {"mirror": True, "mul": (1.18, 1.02, 0.80), "gamma": 0.92}),  # candlelit
+    ("room_09", "room-boss-arena-pixel.png", (1152, 640), {"mul": (1.25, 0.82, 0.82), "gamma": 0.95}),   # elite court
+    ("room_10", "room-painted-interior.png", (1152, 640), {"mul": (0.80, 0.88, 1.05), "gamma": 1.25}),   # dusk
 ]
 
 
@@ -260,14 +271,27 @@ def repair_arena(im):
     return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
 
 
+def grade(im, ops):
+    """Colour-grade and optionally mirror a room image."""
+    arr = np.asarray(im).astype(np.float32) / 255.0
+    if "gamma" in ops:
+        arr = np.power(arr, ops["gamma"])
+    if "mul" in ops:
+        arr = arr * np.array(ops["mul"], dtype=np.float32)
+    if ops.get("mirror"):
+        arr = arr[:, ::-1]
+    return Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8))
+
+
 def rooms():
-    for name, src, size in ROOM_JOBS:
+    for name, src, size, ops in ROOM_JOBS:
         im = Image.open(os.path.join(REF, src)).convert("RGB").resize(size, Image.LANCZOS)
-        if name == "room_03":
+        if src.startswith("room-boss-arena"):
             im = repair_arena(im)
+        im = grade(im, ops)
         path = os.path.join(ROOT, "assets", "sprites", "rooms", name + ".png")
         im.save(path)
-        print(f"  {name:10s} {im.width} x {im.height} <- {src}")
+        print(f"  {name:10s} {im.width} x {im.height} <- {src} {ops if ops else ''}")
 
 
 def contact_sheet(images):

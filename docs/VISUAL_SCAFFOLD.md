@@ -8,6 +8,27 @@ Read this before you start on your mechanic.
 
 ---
 
+## Update, 13 Nov (later): ten layouts, the boss fight, and some feel
+
+**Ten layouts.** `layouts.json` now holds the GDD's ten. Seven are variants
+of the two paintings: `cutout_refs.py` grades (and sometimes mirrors) the
+image, and each entry lists `fixtures` - fixed tome walls (`Fixture.tscn`,
+on the wall layer, never break) that shape the floor: a centre block, three
+lanes, four pillars, a diagonal, a horseshoe, a ring. The navigation bake
+treats them as walls, so the same wave paths differently in each room,
+which is the point of the GDD's "routes around walls". `room_09` is tagged
+`elite` and used for room 7; `room_03` is tagged `boss` for room 8; both
+are kept out of the random draw. Each layout has a `title`.
+
+**The boss** has three phases by HP (see the README table): rings and
+aimed spreads, then a two-armed spiral and summoned hares, then a lunge.
+Constants are at the top of `Enemy.gd` under "The boss fight".
+
+**Feel.** `GameManager.shake()` - hits, Shockwave, barrels, boss phase
+changes. The HUD grows a wave counter and a boss bar with the phase name,
+both built at runtime in `HUD.gd` so `HUD.tscn` stays generated. Early
+rooms lean snail, later rooms lean hare, the elite court is mostly archers.
+
 ## Update, 13 Nov: Enemy Adaptation, per the GDD (branch `backup-game`)
 
 The three Dec 2 rules are in `Enemy.gd` and `RoomManager.gd`:
@@ -100,7 +121,7 @@ only thing added.
 |---|---|---|---|---|
 | Bullet Grazing | Daryl Watkins-Mattocks | Nov 18 | `GrazeMeter.gd` | stub + visuals done |
 | Shockwave | Daryl Watkins-Mattocks | Nov 18 | `Shockwave.gd` | stub + ring visual done |
-| Room-Based Combat | K'von Gates | Nov 18 | `RoomManager.gd` | stub + room/doors done |
+| Room-Based Combat | K'von Gates | Nov 18 | `RoomManager.gd` | PREVIEW fill; all 10 layouts in |
 | Combat Rewards | Jarman | Nov 18 | `CombatRewards.gd` | **done** (12 Nov) |
 | Environmental Combat | K'von Gates | Dec 2 | `EnvObject.gd` | stub + 3 objects done |
 | Enemy Adaptation | Jarman | Dec 2 | `Enemy.gd` | **done** (13 Nov, `backup-game`) |

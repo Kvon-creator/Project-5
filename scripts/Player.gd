@@ -221,6 +221,8 @@ func take_damage(amount: int) -> void:
 	hp = clampi(hp - amount, 0, MAX_HP)
 	hp_changed.emit(hp, MAX_HP)
 	_hit_timer = HIT_INVULNERABLE_SECONDS
+	if GameManager.instance:
+		GameManager.instance.shake(3.0)
 	if hp == 0:
 		died.emit()
 

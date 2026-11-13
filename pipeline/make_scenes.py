@@ -487,6 +487,29 @@ def make_env_objects():
               'method="_on_body_entered"]\n' % (L_PLAYER | L_ENEMY)))
 
 
+def make_fixture():
+    """
+    Fixture.tscn - a fixed tome wall. Layouts place these to shape a room:
+    lanes, pillars, a horseshoe. They sit on the WALL layer, never break,
+    and the navigation bake treats them as walls, which is what the GDD's
+    "routes around walls" needs something to route around.
+    """
+    tex = ref("tome_1") if SPRITE_SET == "refs" else rel("assets", "sprites", "props", "cover_intact.png")
+    subs = SHADOW_SUBS + ['[sub_resource type="RectangleShape2D" id="Sh"]\nsize = Vector2(46, 30)\n']
+    write("Fixture.tscn", '[gd_scene load_steps=%d format=3]\n\n' % (1 + len(subs) + 1)
+          + '[ext_resource type="Texture2D" path="%s" id="t_0"]\n\n' % tex
+          + "\n".join(subs)
+          + '\n[node name="Fixture" type="StaticBody2D" groups=["fixture"]]\n'
+            'collision_layer = %d\ncollision_mask = 0\n' % L_WALL
+          + shadow_node(REF_SPRITES["tome"]["shadow"])
+          + '\n[node name="Sprite" type="Sprite2D" parent="."]\n'
+            'texture = ExtResource("t_0")\n'
+            'offset = Vector2(0, %d)\n' % REF_SPRITES["tome"]["offset_y"]
+          + 'modulate = Color(0.78, 0.76, 0.86, 1)\n'
+          + '\n[node name="Shape" type="CollisionShape2D" parent="."]\n'
+            'shape = SubResource("Sh")\n')
+
+
 def make_powerup():
     """
     PowerUp.tscn - the Luminous Pigment Shell.
@@ -902,6 +925,7 @@ def main():
     make_enemy()
     make_bullets()
     make_env_objects()
+    make_fixture()
     make_powerup()
     # make_tileset() - retired: rooms are painted backgrounds now.
     make_room()

@@ -78,6 +78,8 @@ func _fire() -> void:
 	player.is_invulnerable = true
 	fired.emit(player.global_position)
 	_play_ring()
+	if GameManager.instance:
+		GameManager.instance.shake(7.0)
 
 	# TODO(Daryl): with the ring playing, apply the effects inside RADIUS_PX:
 	#

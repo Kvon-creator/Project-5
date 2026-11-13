@@ -61,7 +61,7 @@ static func entry(index: int) -> Dictionary:
 static func geometry_for(index: int) -> Dictionary:
 	var g := framing().duplicate(true)
 	var e := entry(index)
-	for key in ["floor_polygon", "floor_centre", "doors", "spawn_markers", "object_markers"]:
+	for key in ["floor_polygon", "floor_centre", "doors", "spawn_markers", "object_markers", "fixtures", "title"]:
 		if e.has(key):
 			g[key] = e[key]
 	return g
@@ -93,7 +93,7 @@ static func draw_unused(used: Array) -> int:
 	var available: Array[int] = []
 	var standins: Array[int] = []
 	for i in rooms.size():
-		if i in used or _flag(rooms[i], "boss"):
+		if i in used or _flag(rooms[i], "boss") or _flag(rooms[i], "elite"):
 			continue
 		if _flag(rooms[i], "standin"):
 			standins.append(i)
@@ -108,9 +108,14 @@ static func draw_unused(used: Array) -> int:
 
 ## The layout tagged `"boss": true`, or -1 if none is.
 static func boss_layout() -> int:
+	return tagged_layout("boss")
+
+
+## The first layout carrying `tag: true` ("boss", "elite"), or -1.
+static func tagged_layout(tag: String) -> int:
 	var rooms := all()
 	for i in rooms.size():
-		if _flag(rooms[i], "boss"):
+		if _flag(rooms[i], tag):
 			return i
 	return -1
 
