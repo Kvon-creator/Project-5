@@ -31,6 +31,7 @@ extends CanvasLayer
 @onready var end_button: Button = $Root/EndScreen/Panel/VBox/RestartButton
 
 var _meter_full: bool = false
+var _shockwave_pulse: Tween
 
 
 func _ready() -> void:
@@ -109,16 +110,23 @@ func _on_meter_full() -> void:
 		return
 	_meter_full = true
 	shockwave_hint.visible = true
+	shockwave_hint.modulate.a = 1.0
 	# A slow pulse on the hint, not the bar. Pulsing the bar would drag the
 	# eye to the bottom of the screen at the exact moment the player most
 	# needs to be watching bullets.
-	var tween := create_tween().set_loops()
-	tween.tween_property(shockwave_hint, "modulate:a", 0.45, 0.5)
-	tween.tween_property(shockwave_hint, "modulate:a", 1.0, 0.5)
+	if _shockwave_pulse and _shockwave_pulse.is_valid():
+		_shockwave_pulse.kill()
+	_shockwave_pulse = create_tween().set_loops()
+	_shockwave_pulse.tween_property(shockwave_hint, "modulate:a", 0.45, 0.5)
+	_shockwave_pulse.tween_property(shockwave_hint, "modulate:a", 1.0, 0.5)
 
 
 func _on_meter_not_full() -> void:
 	_meter_full = false
+	if _shockwave_pulse and _shockwave_pulse.is_valid():
+		_shockwave_pulse.kill()
+	_shockwave_pulse = null
+	shockwave_hint.modulate.a = 1.0
 	shockwave_hint.visible = false
 
 

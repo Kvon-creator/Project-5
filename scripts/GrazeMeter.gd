@@ -9,9 +9,10 @@ extends Node2D
 ##
 ## GDD input: "WASD to move close to enemy bullets without being hit."
 ##
-## WHAT IS BUILT: the graze spark effect, the meter-full visual pulse, and the
-## signals the HUD and Shockwave already listen to.
-## WHAT IS NOT: the detection itself. See the TODOs.
+## A bullet becomes a graze candidate when it enters the player's 20 px graze
+## band. Credit is awarded only when it exits that band without hitting the
+## player. This keeps direct hits from paying +5 before applying the -25 hit
+## penalty.
 
 # --------------------------------------------------------------------------
 # GDD numbers - section 3, Bullet Grazing
@@ -52,7 +53,16 @@ var meter: int = 0
 ## otherwise grow for the whole run.
 var grazed_bullet_ids: Dictionary = {}
 
+## Bullets currently inside the graze band that have not hit the player.
+## Keyed by instance id so cancellation still works while a bullet is being
+## queued for deletion after a hit.
+var pending_graze_ids: Dictionary = {}
+
 @onready var player: Player = get_parent() as Player
+## GrazeMeter is a child of Player, so its _ready() runs before Player._ready().
+## Resolve the sibling directly instead of reading Player.graze_area, whose
+## parent-level @onready assignment is not guaranteed to have run yet.
+@onready var graze_area: Area2D = get_parent().get_node("GrazeArea") as Area2D
 
 
 func _ready() -> void:
@@ -61,34 +71,56 @@ func _ready() -> void:
 	# and getting that wiring right is the scaffold's job.
 	if player:
 		player.took_damage.connect(_on_player_took_damage)
-		# PREVIEW(Daryl): the cheap way described below - the GrazeArea on
-		# the player is exactly hitbox + 20 px, so anything entering it that
-		# has not hit is a graze.
-		if is_instance_valid(player.graze_area):
-			player.graze_area.area_entered.connect(_on_graze_area_entered)
+		# The GrazeArea is exactly hitbox + 20 px. Entry starts a candidate;
+		# safe exit confirms it.
+		if is_instance_valid(graze_area):
+			graze_area.area_entered.connect(_on_graze_area_entered)
+			graze_area.area_exited.connect(_on_graze_area_exited)
 	meter_changed.emit(meter, METER_MAX)
 
 
 func _on_graze_area_entered(area: Area2D) -> void:
-	if area is EnemyBullet and not (area as EnemyBullet).grazed:
-		register_graze(area)
+	if not (area is EnemyBullet):
+		return
+	var bullet := area as EnemyBullet
+	var id := bullet.get_instance_id()
+	if bullet.grazed or grazed_bullet_ids.has(id) or pending_graze_ids.has(id):
+		return
+
+	pending_graze_ids[id] = true
+	# EnemyBullet emits before Player.take_damage(), so a direct hit cancels
+	# the candidate before the damage penalty is applied.
+	bullet.hit_player.connect(_on_pending_bullet_hit.bind(id), CONNECT_ONE_SHOT)
+	# A bullet that expires or is destroyed while still inside the band did not
+	# safely pass through it and must not award credit.
+	bullet.tree_exiting.connect(_on_pending_bullet_removed.bind(id), CONNECT_ONE_SHOT)
 
 
-func _physics_process(_delta: float) -> void:
-	# TODO(Daryl): for each enemy bullet in the room, measure the distance
-	# from the bullet to the player hitbox. If it is <= GRAZE_DISTANCE_PX,
-	# the bullet did not hit, and its instance id is not already in
-	# grazed_bullet_ids, call register_graze(bullet).
-	#
-	# The cheap way: put an Area2D of radius GRAZE_DISTANCE_PX on the player
-	# (Player.tscn already has one, $GrazeArea, on the graze_area layer and
-	# masking enemy_bullet) and use its area_entered signal rather than
-	# looping every bullet every frame.
-	pass
+func _on_graze_area_exited(area: Area2D) -> void:
+	if not (area is EnemyBullet):
+		return
+	var bullet := area as EnemyBullet
+	var id := bullet.get_instance_id()
+	if not pending_graze_ids.has(id):
+		return
+	pending_graze_ids.erase(id)
+	# Shockwave or lifetime cleanup can remove a bullet while it overlaps the
+	# graze band. Removal is not a safe pass and must not pay out.
+	if bullet.is_queued_for_deletion():
+		return
+	register_graze(bullet)
 
 
-## Call when a bullet has been confirmed grazed. Handles the bookkeeping, the
-## spark and the signals; Daryl only has to supply the detection.
+func _on_pending_bullet_hit(_damage: int, id: int) -> void:
+	pending_graze_ids.erase(id)
+
+
+func _on_pending_bullet_removed(id: int) -> void:
+	pending_graze_ids.erase(id)
+
+
+## Call when a bullet has safely exited the graze band. Handles bookkeeping,
+## meter gain, feedback and signals.
 func register_graze(bullet: Node2D) -> void:
 	var id := bullet.get_instance_id()
 	if grazed_bullet_ids.has(id):
@@ -131,6 +163,7 @@ func _on_player_took_damage(_amount: int) -> void:
 ## room change so the dictionary does not grow across a whole run.
 func reset_for_new_room() -> void:
 	grazed_bullet_ids.clear()
+	pending_graze_ids.clear()
 
 
 # --------------------------------------------------------------------------

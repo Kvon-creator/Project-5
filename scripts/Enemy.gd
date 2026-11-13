@@ -69,6 +69,9 @@ const FIRE_INTERVAL := {"hare": 1.4, "scribe": 2.5}
 const FIRE_RANGE_PX: float = 460.0
 const SCRIBE_RING_BULLETS: int = 12
 const SEPARATION_PX: float = 34.0         ## enemies shoulder each other apart
+## Shockwave supplies the distance. This controls only how quickly collision-
+## safe knockback is consumed, not how far the enemy travels.
+const KNOCKBACK_SPEED_PX_PER_SECOND: float = 500.0
 const ENEMY_BULLET_SCENE: PackedScene = preload("res://scenes/EnemyBullet.tscn")
 
 # --------------------------------------------------------------------------
@@ -102,7 +105,7 @@ var _is_dying: bool = false
 var _target: Vector2 = Vector2.INF   ## where the current "path" is headed
 var _melee_cooldown: float = 0.0
 var _fire_cooldown: float = 1.0      ## first shot comes after a beat, not on spawn
-var _knockback: Vector2 = Vector2.ZERO
+var _knockback_remaining: Vector2 = Vector2.ZERO
 var _volley: int = 0
 var _anim_t: float = 0.0
 
@@ -151,6 +154,15 @@ func _physics_process(delta: float) -> void:
 	if _is_dying:
 		return
 
+	# Shockwave knockback is a requested displacement, not an approximate
+	# velocity. Consume exactly that displacement with move_and_collide(), which
+	# stops safely at walls/cover while still allowing Area2D traps to trigger.
+	# Normal AI movement pauses briefly so 50 px in open space remains 50 px.
+	if _apply_knockback_step(delta):
+		velocity = Vector2.ZERO
+		_animate(delta)
+		return
+
 	# Built: keep the sprite pointing along the movement/aim direction.
 	if velocity.length_squared() > 1.0:
 		facing = velocity.normalized()
@@ -164,7 +176,7 @@ func _physics_process(delta: float) -> void:
 		_recalculate_path()
 
 	# PREVIEW(Jarman): move straight at the target, shoulder other enemies
-	# aside, carry any knockback, and let move_and_slide handle the walls.
+	# aside and let move_and_slide handle the walls.
 	var player := _player()
 	var speed: float = SPECIES_SPEED.get(species, 60.0)
 	var desired := Vector2.ZERO
@@ -177,8 +189,7 @@ func _physics_process(delta: float) -> void:
 		var d := away.length()
 		if d > 0.01 and d < SEPARATION_PX:
 			desired += away / d * (SEPARATION_PX - d) * 3.0
-	velocity = desired + _knockback
-	_knockback = _knockback.lerp(Vector2.ZERO, minf(1.0, delta * 12.0))
+	velocity = desired
 	move_and_slide()
 
 	# A ranged enemy that is standing still still watches the player.
@@ -247,9 +258,30 @@ func _spawn_bullet(dir: Vector2) -> void:
 	get_tree().current_scene.add_child(b)
 
 
-## Shockwave and barrels push enemies: `offset` is how far, in px.
+## Shockwave and barrels push enemies: `offset` is the requested displacement
+## in pixels. In unobstructed space the full vector is consumed exactly.
 func apply_knockback(offset: Vector2) -> void:
-	_knockback += offset * 7.0
+	_knockback_remaining += offset
+
+
+func _apply_knockback_step(delta: float) -> bool:
+	if _knockback_remaining.length_squared() <= 0.0001:
+		_knockback_remaining = Vector2.ZERO
+		return false
+	var step := _knockback_remaining.limit_length(
+			KNOCKBACK_SPEED_PX_PER_SECOND * delta)
+	var collision := move_and_collide(step)
+	if collision:
+		_knockback_remaining = Vector2.ZERO
+	else:
+		_knockback_remaining -= step
+		if _knockback_remaining.length_squared() <= 0.0001:
+			_knockback_remaining = Vector2.ZERO
+	return true
+
+
+func is_knockback_active() -> bool:
+	return _knockback_remaining.length_squared() > 0.0001
 
 
 ## Breathing while still, a bob while moving. Visual only.
