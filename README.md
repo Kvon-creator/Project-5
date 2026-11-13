@@ -10,14 +10,14 @@ graze enemy bullets to charge a Shockwave, beat the boss in room 8.
 
 ## Status
 
-**Playable, every GDD mechanic in** (branch `backup-game`, 13 Nov; `base-game`
-is the same without Enemy Adaptation). Open it and you can walk,
-aim, shoot, graze, fire the Shockwave, clear waves, walk through a door and
-reach the boss. Jarman's two mechanics (Combat Rewards, Enemy
-Adaptation) are implemented to the GDD. The other four have a simple working
-version marked `# PREVIEW(<owner>)` in their scripts; those are placeholders
-for the owner to replace, not the final design. The GDD constants above them
-are untouched. All ten layouts are in (seven are graded, mirrored and
+**Playable, every GDD mechanic in** (branch `kvon-mechanics`, 13 Nov, cut
+from `backup-game`). Open it and you can walk, aim, shoot, graze, fire the
+Shockwave, clear waves, walk through a door and reach the boss.
+K'von's two mechanics (Environmental Combat, Room-Based Combat) and Jarman's
+two (Combat Rewards, Enemy Adaptation) are implemented to the GDD. Daryl's two
+have a simple working version marked `# PREVIEW(Daryl)` in their scripts;
+those are placeholders for the owner to replace, not the final design. The
+GDD constants above them are untouched. All ten layouts are in (seven are graded, mirrored and
 fixture-shaped variants of the two painted references), and the boss has
 three phases.
 
@@ -56,8 +56,13 @@ Before pushing, run the checks that were run on every commit of this preview:
 ```bash
 python3 pipeline/check_gdscript.py                 # static GDScript check
 godot --headless --path . --quit-after 150         # must print no errors
+godot --headless --path . res://tests/MechanicsTest.tscn   # GDD rule checks
 godot --path . res://tests/Screenshot.tscn         # saves build/shots/*.png
 ```
+
+`MechanicsTest` plays a whole 8-room run and then sets up each barrel, cover
+and trap case, printing PASS or FAIL per GDD rule for Environmental Combat
+and Room-Based Combat; it exits non-zero if any rule fails.
 
 The last one opens a window for a few seconds, drives the knight with fake
 input, and saves frames you can hold up against `docs/reference/`.

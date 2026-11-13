@@ -10,10 +10,17 @@ extends StaticBody2D
 ## GDD input: "WASD to move, mouse to aim, left-click to shoot an object;
 ## traps trigger when stepped on."
 ##
-## WHAT IS BUILT: all three objects' visuals, including cover's three damage
-## stages and the trap's armed/disarmed art, plus the hit bookkeeping that
-## drives them.
-## WHAT IS NOT: the blast, the bullet blocking, the trap trigger.
+## WHAT IS BUILT: everything in GDD section 1.
+##   Barrel - lit after the first hit, detonates on the second (or at once
+##            inside a Shockwave): 30 damage to every enemy within 96 px,
+##            credited as a "barrel" kill so Combat Rewards pays double.
+##            The blast also catches the player, chips cover and chains
+##            other barrels.
+##   Cover  - blocks enemy bullets, breaks on the 5th hit from any source
+##            (player shots, enemy bullets, barrel blasts).
+##   Trap   - 15 damage to whoever steps on an armed plate, credited as a
+##            "trap" kill; re-arms after 2 s and fires again straight away
+##            if someone is still standing on it.
 
 enum Kind { BARREL, COVER, TRAP }
 
@@ -59,11 +66,18 @@ var trap_armed: bool = true
 ## dealt by then.
 var _just_triggered: bool = false
 var _detonated: bool = false
+var _broken: bool = false
 
 ## How long the triggered art shows before the plate goes back to disarmed.
 ## Shorter than TRAP_REARM_SECONDS, so the player sees three distinct states:
 ## fired -> safe -> armed again.
 const TRIGGERED_DISPLAY_SECONDS: float = 0.6
+
+## Counts down from TRAP_REARM_SECONDS after a trap fires; 0 when armed.
+var _rearm_remaining: float = 0.0
+
+## The pulsing Ember tint on a barrel that is one hit from going up.
+var _fuse_tween: Tween
 
 @onready var sprite: Sprite2D = $Sprite
 
@@ -72,12 +86,15 @@ func _ready() -> void:
 	add_to_group("env_object")
 	if kind == Kind.TRAP:
 		add_to_group("hazard")   # Enemy Adaptation looks for this group
+	set_physics_process(false)   # only a disarmed trap needs the clock
 	_refresh_visual()
 
 
-## Any damage source calls this: the player's shots, the Shockwave, a barrel
-## blast. `source` is recorded so a chain reaction still credits correctly.
+## Any damage source calls this: the player's shots, enemy bullets, a barrel
+## blast. `source` is "player", "enemy" or "barrel".
 func take_hit(_source: String = "player") -> void:
+	if _detonated or _broken or kind == Kind.TRAP:
+		return   # spent objects take no more hits; traps are not destroyed
 	hits_taken += 1
 	_flash()
 	_refresh_visual()
@@ -86,11 +103,17 @@ func take_hit(_source: String = "player") -> void:
 		Kind.BARREL:
 			if hits_taken >= BARREL_HITS_TO_DETONATE:
 				detonate()
+			else:
+				_light_fuse()
 		Kind.COVER:
 			if hits_taken >= COVER_HITS_TO_BREAK:
 				_break_cover()
-		Kind.TRAP:
-			pass   # traps are not destroyed by damage
+
+
+## True once a barrel has gone up or a tome stack has broken - it is on its
+## way out of the scene and no longer part of the room.
+func is_spent() -> bool:
+	return _detonated or _broken
 
 
 ## The Defensive Tome Stack has taken its 5th hit.
@@ -100,8 +123,9 @@ func take_hit(_source: String = "player") -> void:
 ## immediately rather than when the animation finishes - otherwise there is a
 ## window where the cover looks gone but still eats bullets.
 func _break_cover() -> void:
-	if kind != Kind.COVER:
+	if kind != Kind.COVER or _broken:
 		return
+	_broken = true
 	broke.emit(global_position)
 
 	# Stop blocking NOW. Deferred because a body may be mid-collision with it
@@ -156,51 +180,127 @@ func detonate() -> void:
 	if kind != Kind.BARREL or _detonated:
 		return
 	_detonated = true
+	hits_taken = maxi(hits_taken, BARREL_HITS_TO_DETONATE)
+	if _fuse_tween:
+		_fuse_tween.kill()
+	# Out of the way at once: a spent barrel blocks nothing.
+	set_deferred("collision_layer", 0)
 	detonated.emit(global_position, BARREL_RADIUS_PX)
 	_play_explosion()
 	if GameManager.instance:
 		GameManager.instance.shake(6.0)
 
-	# PREVIEW(K'von): the blast. "barrel" as the source so CombatRewards
-	# pays double; the player is in it too; other barrels chain.
 	var origin := global_position
+
+	# "30 damage to enemies within 96 px". The source is "barrel", which is
+	# what makes Combat Rewards pay double for a kill (cross-link, new).
 	for e in get_tree().get_nodes_in_group("enemy"):
 		if e is Enemy and (e as Enemy).global_position.distance_to(origin) <= BARREL_RADIUS_PX:
-			(e as Enemy).apply_knockback(((e as Enemy).global_position - origin).normalized() * 30.0)
 			(e as Enemy).take_damage(BARREL_DAMAGE, "barrel")
+
+	# The GDD architecture has EnvObject "reading the player for trap and
+	# blast damage": standing next to your own barrel costs the same 30.
 	var gm := GameManager.instance
 	if gm and is_instance_valid(gm.player) \
 			and gm.player.global_position.distance_to(origin) <= BARREL_RADIUS_PX:
 		gm.player.take_damage(BARREL_DAMAGE)
+
+	# Cover "breaks after 5 hits from any source" - a blast is one hit.
+	# Other barrels in the radius chain, a frame later so each ring reads.
 	for o in get_tree().get_nodes_in_group("env_object"):
-		if o != self and o is EnvObject and (o as EnvObject).kind == Kind.BARREL \
-				and (o as EnvObject).global_position.distance_to(origin) <= BARREL_RADIUS_PX:
-			(o as EnvObject).detonate.call_deferred()
+		if o == self or not (o is EnvObject):
+			continue
+		var other := o as EnvObject
+		if other.global_position.distance_to(origin) > BARREL_RADIUS_PX:
+			continue
+		if other.kind == Kind.COVER:
+			other.take_hit("barrel")
+		elif other.kind == Kind.BARREL:
+			other.detonate.call_deferred()
 
 
+## One hit from detonating: the lamp pulses Ember so the player can read it.
+func _light_fuse() -> void:
+	if _fuse_tween or not is_instance_valid(sprite):
+		return
+	_fuse_tween = create_tween().set_loops()
+	_fuse_tween.tween_property(sprite, "self_modulate", Palette.FIRE.lightened(0.35), 0.18)
+	_fuse_tween.tween_property(sprite, "self_modulate", Color.WHITE, 0.18)
+
+
+# --------------------------------------------------------------------------
+# Trap
+# --------------------------------------------------------------------------
+
+## Something walked (or was knocked) onto the plate.
 func _on_body_entered(body: Node2D) -> void:
 	if kind != Kind.TRAP or not trap_armed:
 		return
-	trap_triggered.emit(body)
+	_trigger_trap(body)
+
+
+## GDD: "Triggers when stepped on: 15 damage to the enemy or player on it;
+## re-arms after 2 s (proposed)". Everyone on the plate when it fires is
+## "on it"; `first` is whoever set it off.
+func _trigger_trap(first: Node2D) -> void:
+	var victims: Array[Node2D] = [first]
+	for body in _bodies_on_plate():
+		if body not in victims:
+			victims.append(body)
+
+	trap_triggered.emit(first)
 	_just_triggered = true
+	_rearm_remaining = TRAP_REARM_SECONDS
+	set_physics_process(true)
 	set_armed(false)
 
-	# PREVIEW(K'von): "15 damage to the enemy or player on it" - both.
-	if body is Enemy:
-		(body as Enemy).take_damage(TRAP_DAMAGE, "trap")
-	elif body is Player:
-		(body as Player).take_damage(TRAP_DAMAGE)
+	for body in victims:
+		if body is Enemy:
+			# "trap" as the source: a kill here pays double energy.
+			(body as Enemy).take_damage(TRAP_DAMAGE, "trap")
+		elif body is Player:
+			(body as Player).take_damage(TRAP_DAMAGE)
 
-	# Built: the three-state visual and the re-arm clock.
-	await get_tree().create_timer(TRIGGERED_DISPLAY_SECONDS).timeout
+
+## The re-arm clock. Only runs while the trap is disarmed.
+func _physics_process(delta: float) -> void:
+	if kind != Kind.TRAP or trap_armed:
+		set_physics_process(false)
+		return
+	_rearm_remaining -= delta
+	if _just_triggered \
+			and _rearm_remaining <= TRAP_REARM_SECONDS - TRIGGERED_DISPLAY_SECONDS:
+		_just_triggered = false
+		_refresh_visual()
+	if _rearm_remaining > 0.0:
+		return
+	_rearm_remaining = 0.0
 	_just_triggered = false
-	_refresh_visual()
-	await get_tree().create_timer(
-			TRAP_REARM_SECONDS - TRIGGERED_DISPLAY_SECONDS).timeout
+	set_physics_process(false)
 	set_armed(true)
+	# Still standing on it when it re-arms? Then it has been stepped on.
+	var still_on := _bodies_on_plate()
+	if not still_on.is_empty():
+		_trigger_trap(still_on[0])
+
+
+## Living enemies and the player currently over the plate.
+func _bodies_on_plate() -> Array[Node2D]:
+	var out: Array[Node2D] = []
+	var trigger := get_node_or_null("Trigger") as Area2D
+	if trigger == null or not trigger.monitoring:
+		return out
+	for body in trigger.get_overlapping_bodies():
+		if body is Enemy and (body as Enemy).hp > 0:
+			out.append(body)
+		elif body is Player and not (body as Player).is_dead:
+			out.append(body)
+	return out
 
 
 func set_armed(value: bool) -> void:
+	if trap_armed == value:
+		return
 	trap_armed = value
 	armed_changed.emit(value)
 	_refresh_visual()

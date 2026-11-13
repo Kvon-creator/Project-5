@@ -127,6 +127,7 @@ var _target: Vector2 = Vector2.INF   ## where the current "path" is headed
 var _melee_cooldown: float = 0.0
 var _fire_cooldown: float = 1.0      ## first shot comes after a beat, not on spawn
 var _knockback: Vector2 = Vector2.ZERO
+const KNOCKBACK_DECAY: float = 12.0
 var _volley: int = 0
 var _anim_t: float = 0.0
 
@@ -245,7 +246,7 @@ func _physics_process(delta: float) -> void:
 		if d > 0.01 and d < SEPARATION_PX:
 			desired += away / d * (SEPARATION_PX - d) * 3.0
 	velocity = desired + _knockback
-	_knockback = _knockback.lerp(Vector2.ZERO, minf(1.0, delta * 12.0))
+	_knockback = _knockback.lerp(Vector2.ZERO, minf(1.0, delta * KNOCKBACK_DECAY))
 	move_and_slide()
 
 	# A ranged enemy that is standing still still watches the player.
@@ -517,7 +518,10 @@ func _spawn_bullet(dir: Vector2) -> void:
 
 ## Shockwave and barrels push enemies: `offset` is how far, in px.
 func apply_knockback(offset: Vector2) -> void:
-	_knockback += offset * 7.0
+	# _knockback is a velocity that decays at KNOCKBACK_DECAY per second, so
+	# it carries the enemy offset = velocity / decay px in total. GDD,
+	# Shockwave: "50 px knockback".
+	_knockback += offset * KNOCKBACK_DECAY
 
 
 ## Breathing while still, a bob while moving. Visual only.

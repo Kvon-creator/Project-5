@@ -15,9 +15,18 @@ extends Node2D
 ## separate mechanic any more. It is one rule of this one - rooms are drawn
 ## from 10 hand-built layouts, not generated.
 ##
-## WHAT IS BUILT: the room visual - tilemap layers, door sprites and their
-## locked/open states, spawn marker gizmos, and the layout-loading plumbing.
-## WHAT IS NOT: wave logic, spawning, door state machine.
+## WHAT IS BUILT: everything in GDD section 2.
+##   Run shape  - 8 rooms: 1-6 combat, 7 elite, 8 boss. Rooms 1-6 draw a
+##                layout from the pool with no repeats.
+##   Doors      - lock on entry, unlock when the last wave is down; walking
+##                into an open door emits `door_crossed` and GameManager
+##                starts the next room.
+##   Waves      - the GDD table (2 or 3 waves, 4-6 standard, an elite per
+##                wave from room 4; 2 elites + 4 standard in room 7), the
+##                next wave 1.5 s after the last one is cleared, every enemy
+##                at least 200 px from the player.
+##   Objects    - 1-3 per room, kind and marker rolled fresh every room.
+## The +10 HP room-clear heal lives in GameManager, off `room_cleared`.
 
 # --------------------------------------------------------------------------
 # GDD numbers - section 2, Room-Based Combat
@@ -63,14 +72,13 @@ const OBJECTS_PER_ROOM_MAX: int = 3
 # --------------------------------------------------------------------------
 
 signal room_started(room_index: int)
-@warning_ignore("unused_signal")
 signal wave_started(wave_index: int, wave_count: int)
-@warning_ignore("unused_signal")
 signal wave_cleared(wave_index: int)
 ## Every enemy in every wave is down. GameManager listens and advances.
-@warning_ignore("unused_signal")
 signal room_cleared(room_index: int)
 signal doors_unlocked
+## The player walked into an open door. GameManager starts the next room.
+signal door_crossed(door_name: String)
 ## The boss has been placed; the HUD puts up its bar.
 signal boss_spawned(boss: Enemy)
 
@@ -113,8 +121,8 @@ var layout_title: String = ""
 const NAV_AGENT_RADIUS: float = 14.0
 var _floor_polygon: PackedVector2Array = PackedVector2Array()
 
-## PREVIEW(K'von): the scenes the room spawns. Standard enemies are a coin
-## flip between the two standard species; the elite and boss are fixed.
+## Standard enemies are a mix of the two standard species; the elite and
+## boss species are fixed.
 const ENEMY_SCENE: PackedScene = preload("res://scenes/Enemy.tscn")
 const OBJECT_SCENES: Array[PackedScene] = [
 	preload("res://scenes/Barrel.tscn"),
@@ -131,8 +139,42 @@ const FIXTURE_SCENE: PackedScene = preload("res://scenes/Fixture.tscn")
 const ELITE_SPECIES := "grotesque"
 const BOSS_SPECIES := "scribe"
 ## A beat between the doors locking and the first wave, so the player sees
-## the room before it fills.
+## the room before it fills. Not a GDD number; the 1.5 s rule is between
+## waves.
 const FIRST_WAVE_DELAY_SECONDS: float = 0.8
+
+## How close to a door anchor counts as being in the doorway, and how
+## squarely the player has to be walking into it (dot of the move input with
+## the door's outward direction).
+const DOOR_TRIGGER_PX: float = 52.0
+const DOOR_WALK_DOT: float = 0.25
+
+## Objects are not placed on top of the spot the player walks in at, and
+## nothing spawns hard against a wall or prop.
+const ENTRY_CLEARANCE_PX: float = 72.0
+const SPAWN_CLEARANCE_PX: float = 22.0
+const SPAWN_SPACING_PX: float = 40.0
+
+# --------------------------------------------------------------------------
+# The room's state machine
+# --------------------------------------------------------------------------
+
+## IDLE      nothing running (before the run starts)
+## STARTING  doors locked, objects placed, first wave about to spawn
+## FIGHTING  a wave is alive
+## BETWEEN   wave cleared, the next one spawns when the 1.5 s is up
+## CLEARED   last wave down, doors open, waiting for the player to leave
+## EXITED    the player has walked through a door; GameManager takes over
+## STOPPED   the run is over
+enum State { IDLE, STARTING, FIGHTING, BETWEEN, CLEARED, EXITED, STOPPED }
+
+var state: State = State.IDLE
+var _wave_timer: float = 0.0
+var _door_pulse: float = 0.0
+
+## Where the player stands when this room starts. Set by start_room, read by
+## GameManager.
+var entry_point: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
@@ -148,25 +190,27 @@ func _ready() -> void:
 		load_layout(0, false)
 
 
-## Show a layout. Because every room image conforms to the shared framing in
-## docs/ROOM_BRIEF.md, the floor outline, doors and markers are the same for
-## all of them - so this is only a texture swap. Nothing about collision or
-## spawning has to change.
+## Show a layout: its painted background, floor outline, doors, markers and
+## fixed tome walls.
 func load_layout(index: int, mark_used: bool = true) -> void:
 	var tex := RoomLayouts.texture_for(index)
 	if tex == null:
 		return
 	layout_index = index
 	background.texture = tex
-	_apply_geometry(RoomLayouts.geometry_for(index))
+	var g := RoomLayouts.geometry_for(index)
+	_apply_geometry(g)
+	# GDD: "objects placed on 3-6 spawn markers per layout".
+	var marker_count: int = (g.get("object_markers", []) as Array).size()
+	if marker_count < MIN_SPAWN_MARKERS or marker_count > MAX_SPAWN_MARKERS:
+		push_warning("RoomManager: layout %d has %d object markers; the GDD asks for %d-%d."
+				% [index, marker_count, MIN_SPAWN_MARKERS, MAX_SPAWN_MARKERS])
 	if mark_used and index not in used_layouts:
 		used_layouts.append(index)
 
 
 ## Move the collision outline, door anchors and markers to where this layout
-## says they are. Rooms on the shared framing all give the same answer, so
-## for them this is a no-op in effect; a painted room with its own floor
-## shape gets its own geometry without any engine work.
+## says they are.
 func _apply_geometry(g: Dictionary) -> void:
 	if g.is_empty():
 		return
@@ -195,6 +239,7 @@ func _apply_geometry(g: Dictionary) -> void:
 			var wall := FIXTURE_SCENE.instantiate() as Node2D
 			wall.global_position = Vector2(f[0], f[1])
 			fixtures.add_child(wall)
+	_refresh_door_visuals()
 
 
 ## Make `parent` hold exactly one Marker2D per entry, named prefix+key.
@@ -209,6 +254,7 @@ func _sync_markers(parent: Node2D, prefix: String, entries: Variant) -> void:
 			wanted[prefix + str(i)] = Vector2(entries[i][0], entries[i][1])
 	for child in parent.get_children():
 		if not wanted.has(child.name):
+			parent.remove_child(child)   # gone now, not at the end of the frame
 			child.queue_free()
 	for marker_name in wanted.keys():
 		var m := parent.get_node_or_null(NodePath(marker_name)) as Marker2D
@@ -250,66 +296,101 @@ func wave_composition_for(room: int, _wave: int) -> Dictionary:
 
 
 # --------------------------------------------------------------------------
-# TODOs
+# Running a room
 # --------------------------------------------------------------------------
 
-func start_room(index: int) -> void:
+## Start room `index`. `via_door` is the door the player left the previous
+## room through ("" for the first room of a run); they come in on the
+## opposite side.
+##
+## GDD: "Crossing the threshold starts the room" and "Doors: Lock on entry".
+func start_room(index: int, via_door: String = "") -> void:
 	room_index = index
 	wave_index = 0
 	enemies_alive = 0
-	# PREVIEW(K'von): the simplest version of the GDD loop. Pick a layout,
-	# lock up, scatter objects, and start wave 0 after a short beat. Replace
-	# freely; the constants above are the balance, this is just the order.
+
+	# Nothing from the last room follows the player in.
 	for child in enemies.get_children():
 		enemies.remove_child(child)
 		child.queue_free()
 	for child in objects.get_children():
 		objects.remove_child(child)
 		child.queue_free()
+	for group in ["enemy_bullet", "player_bullet"]:
+		for bullet in get_tree().get_nodes_in_group(group):
+			bullet.queue_free()
+
+	# "Rooms per run 8: rooms 1-6 combat, room 7 elite, room 8 boss". The
+	# elite court and the boss arena are fixed; rooms 1-6 draw from the rest
+	# of the pool with no repeats.
 	if index == BOSS_ROOM and RoomLayouts.boss_layout() >= 0:
 		load_layout(RoomLayouts.boss_layout())
 	elif index == ELITE_ROOM and RoomLayouts.tagged_layout("elite") >= 0:
 		load_layout(RoomLayouts.tagged_layout("elite"))
 	else:
 		load_unused_layout()
+
+	if via_door == "":
+		entry_point = _nearest_open_point(floor_centre() + Vector2(0, 70))
+	else:
+		entry_point = _nearest_open_point(entry_point_opposite(via_door))
+
 	lock_and_show(true)
 	place_objects()
 	bake_navigation.call_deferred()   # objects must be in the tree first
+	state = State.STARTING
+	_wave_timer = FIRST_WAVE_DELAY_SECONDS
 	room_started.emit(index)
-	get_tree().create_timer(FIRST_WAVE_DELAY_SECONDS).timeout.connect(start_next_wave)
 
 
+## The run is over (won or lost): no more waves, doors stay as they are.
+func stop() -> void:
+	state = State.STOPPED
+
+
+func _physics_process(delta: float) -> void:
+	match state:
+		State.STARTING, State.BETWEEN:
+			_wave_timer -= delta
+			if _wave_timer <= 0.0:
+				start_next_wave()
+		State.CLEARED:
+			_check_doors()
+			_door_pulse += delta
+			_pulse_open_doors()
+
+
+## Spawn wave `wave_index`: the GDD composition, every enemy at least 200 px
+## from the player.
 func start_next_wave() -> void:
-	# PREVIEW(K'von): spawn the GDD composition at markers >= 200 px from the
-	# player, one marker per enemy where possible.
+	state = State.FIGHTING
 	var comp := wave_composition_for(room_index, wave_index)
-	var species_list: Array[String] = []
 	var hare_chance := HARE_CHANCE_MID
 	if room_index <= 2:
 		hare_chance = HARE_CHANCE_EARLY
 	elif room_index == ELITE_ROOM:
 		hare_chance = HARE_CHANCE_ELITE
-	for i in int(comp.get("standard", 0)):
-		species_list.append("hare" if randf() < hare_chance else "snail")
-	for i in int(comp.get("elite", 0)):
-		species_list.append(ELITE_SPECIES)
+	# Elites first, so they get real spawn markers when a wave has more
+	# enemies than the layout has markers.
+	var species_list: Array[String] = []
 	for i in int(comp.get("boss", 0)):
 		species_list.append(BOSS_SPECIES)
+	for i in int(comp.get("elite", 0)):
+		species_list.append(ELITE_SPECIES)
+	for i in int(comp.get("standard", 0)):
+		species_list.append("hare" if randf() < hare_chance else "snail")
 
-	var from := Vector2.ZERO
-	var gm := GameManager.instance
-	if gm and is_instance_valid(gm.player):
-		from = gm.player.global_position
-	var points := _spawn_points_far_from(from)
+	var from := _player_position()
+	var points := spawn_points_for(species_list.size(), from)
 	for i in species_list.size():
-		var at: Vector2 = points[i % points.size()]
-		if i >= points.size():   # more enemies than markers: fan out a little
-			at += Vector2(randf_range(-40, 40), randf_range(-30, 30))
-		if species_list[i] == BOSS_SPECIES and spawn_markers.get_child_count() > 0:
-			at = (spawn_markers.get_child(0) as Node2D).global_position   # the boss gets the stage
+		var at: Vector2 = points[i]
+		if species_list[i] == BOSS_SPECIES:
+			at = _boss_spawn_point(from)
 		_spawn_enemy(species_list[i], at)
 
 	wave_started.emit(wave_index, wave_count_for(room_index))
+	if enemies_alive == 0:
+		_finish_wave()   # an empty wave is a cleared wave
 
 
 func _spawn_enemy(species: String, at: Vector2) -> void:
@@ -323,8 +404,47 @@ func _spawn_enemy(species: String, at: Vector2) -> void:
 		boss_spawned.emit(e)
 
 
-## Spawn markers at least MIN_SPAWN_DISTANCE_PX from `from`, shuffled; the
-## farthest few if none qualify, so spawning never fails.
+## `count` places to spawn, every one at least MIN_SPAWN_DISTANCE_PX from
+## `from`. GDD: "Enemies spawn at least 200 px from the player".
+##
+## The layout's spawn markers come first. A wave can be bigger than the
+## number of markers far enough away (up to 7 enemies, 6 markers, and the
+## player may be standing on one), so the rest are open floor points that
+## pass the same distance rule.
+func spawn_points_for(count: int, from: Vector2) -> Array[Vector2]:
+	var markers := _spawn_points_far_from(from)
+	var out: Array[Vector2] = []
+	for p in markers:
+		if out.size() >= count:
+			break
+		out.append(p)
+	var tries := 0
+	while out.size() < count and tries < 300:
+		tries += 1
+		var p := _random_floor_point()
+		if p.distance_to(from) < MIN_SPAWN_DISTANCE_PX:
+			continue
+		if not _is_open_floor(p, SPAWN_CLEARANCE_PX):
+			continue
+		var crowded := false
+		for q in out:
+			if q.distance_to(p) < SPAWN_SPACING_PX:
+				crowded = true
+				break
+		if not crowded:
+			out.append(p)
+	# No more open floor that far away: share the markers. Enemies shoulder
+	# each other apart on their own.
+	var i := 0
+	while out.size() < count:
+		out.append(markers[i % markers.size()])
+		i += 1
+	return out
+
+
+## Spawn markers at least MIN_SPAWN_DISTANCE_PX from `from`, shuffled. Never
+## empty: with no marker far enough it falls back to open floor that is,
+## and only then to the farthest marker.
 func _spawn_points_far_from(from: Vector2) -> Array[Vector2]:
 	var all_points: Array[Vector2] = []
 	for marker in spawn_markers.get_children():
@@ -335,44 +455,81 @@ func _spawn_points_far_from(from: Vector2) -> Array[Vector2]:
 		if p.distance_to(from) >= MIN_SPAWN_DISTANCE_PX:
 			far.append(p)
 	if far.is_empty():
+		for i in 200:
+			var p := _random_floor_point()
+			if p.distance_to(from) >= MIN_SPAWN_DISTANCE_PX \
+					and _is_open_floor(p, SPAWN_CLEARANCE_PX):
+				far.append(p)
+				if far.size() >= 4:
+					break
+	if far.is_empty() and not all_points.is_empty():
 		all_points.sort_custom(func(a: Vector2, b: Vector2) -> bool:
 			return a.distance_to(from) > b.distance_to(from))
-		far = all_points.slice(0, maxi(1, all_points.size() / 2))
+		far.append(all_points[0])
 	if far.is_empty():
 		far.append(floor_centre())
 	far.shuffle()
 	return far
 
 
+## The boss takes the stage (the layout's first spawn marker) unless the
+## player is standing too close to it.
+func _boss_spawn_point(from: Vector2) -> Vector2:
+	if spawn_markers.get_child_count() > 0:
+		var stage: Vector2 = (spawn_markers.get_child(0) as Node2D).global_position
+		if stage.distance_to(from) >= MIN_SPAWN_DISTANCE_PX:
+			return stage
+	return _spawn_points_far_from(from)[0]
+
+
 func _on_enemy_died(enemy: Enemy = null) -> void:
-	# PREVIEW(K'von): count down; next wave after the GDD delay, or unlock.
 	enemies_alive = maxi(0, enemies_alive - 1)
 	# The boss's summoned minions die with it, so the win is not held up
-	# by a stray hare.
+	# by a stray hare. Each of those deaths comes back through here.
 	if enemy and enemy.species == BOSS_SPECIES:
 		for other in get_tree().get_nodes_in_group("enemy"):
 			if other != enemy and other is Enemy:
 				(other as Enemy).die()
-	if enemies_alive > 0:
+	if enemies_alive > 0 or state != State.FIGHTING:
 		return
+	_finish_wave()
+
+
+## The last enemy of a wave is down.
+## GDD: "Next wave spawns 1.5 s after the previous one is cleared" and
+## "Doors ... unlock when the last wave is defeated".
+func _finish_wave() -> void:
 	wave_cleared.emit(wave_index)
 	wave_index += 1
 	if wave_index < wave_count_for(room_index):
-		get_tree().create_timer(WAVE_DELAY_SECONDS).timeout.connect(start_next_wave)
+		state = State.BETWEEN
+		_wave_timer = WAVE_DELAY_SECONDS
 	else:
+		state = State.CLEARED
+		_door_pulse = 0.0
 		lock_and_show(false)
 		room_cleared.emit(room_index)
 
 
-## GDD cross-link, K'von to himself: "Each layout's 3-6 spawn markers decide
-## where objects can appear, and every new room rolls new objects, so no two
-## runs use the same setups."
+## GDD: "Interactive objects per room 1-3, type and spot picked at random
+## each run", and the cross-link, K'von to himself: "Each layout's 3-6 spawn
+## markers decide where objects can appear, and every new room rolls new
+## objects, so no two runs use the same setups."
 func place_objects() -> void:
-	# PREVIEW(K'von): 1-3 distinct markers, a random object kind at each.
 	var spots: Array[Vector2] = []
+	var fallback: Array[Vector2] = []
 	for marker in object_markers.get_children():
-		if marker is Node2D:
-			spots.append((marker as Node2D).global_position)
+		if not (marker is Node2D):
+			continue
+		var p: Vector2 = (marker as Node2D).global_position
+		if _inside_fixture(p, 8.0):
+			continue   # a tome wall already stands on this marker
+		fallback.append(p)
+		# Not under the player's feet as they walk in.
+		if p.distance_to(entry_point) >= ENTRY_CLEARANCE_PX:
+			spots.append(p)
+	if spots.is_empty():
+		spots = fallback
 	spots.shuffle()
 	var count := mini(randi_range(OBJECTS_PER_ROOM_MIN, OBJECTS_PER_ROOM_MAX), spots.size())
 	for i in count:
@@ -389,6 +546,100 @@ func place_objects() -> void:
 			obj.armed_changed.connect(func(_armed: bool) -> void: bake_navigation.call_deferred())
 
 
+# --------------------------------------------------------------------------
+# Floor queries
+# --------------------------------------------------------------------------
+
+func _player() -> Player:
+	var gm := GameManager.instance
+	if gm and is_instance_valid(gm.player):
+		return gm.player
+	return null
+
+
+func _player_position() -> Vector2:
+	var p := _player()
+	return p.global_position if p else entry_point
+
+
+## A uniformly random point in the floor's bounding box (not necessarily on
+## the floor - callers test it).
+func _random_floor_point() -> Vector2:
+	if _floor_polygon.size() < 3:
+		return floor_centre()
+	var lo := _floor_polygon[0]
+	var hi := _floor_polygon[0]
+	for p in _floor_polygon:
+		lo = lo.min(p)
+		hi = hi.max(p)
+	return Vector2(randf_range(lo.x, hi.x), randf_range(lo.y, hi.y))
+
+
+## Is `p` on the floor, at least `margin` px from the walls, the fixed tome
+## walls and every object (armed traps get their 75 px hazard clearance)?
+func _is_open_floor(p: Vector2, margin: float) -> bool:
+	var n := _floor_polygon.size()
+	if n >= 3:
+		if not Geometry2D.is_point_in_polygon(p, _floor_polygon):
+			return false
+		for i in n:
+			var a := _floor_polygon[i]
+			var b := _floor_polygon[(i + 1) % n]
+			if Geometry2D.get_closest_point_to_segment(p, a, b).distance_to(p) < margin:
+				return false
+	if _inside_fixture(p, margin):
+		return false
+	for obj in objects.get_children():
+		if not (obj is EnvObject) or obj.is_queued_for_deletion():
+			continue
+		var e := obj as EnvObject
+		if e.is_spent():
+			continue
+		var half := _obstacle_half_size(e) + Vector2.ONE * margin
+		if e.kind == EnvObject.Kind.TRAP:
+			half += Vector2.ONE * Enemy.HAZARD_AVOID_PX
+		var d := (p - e.global_position).abs()
+		if d.x <= half.x and d.y <= half.y:
+			return false
+	return true
+
+
+## Is `p` within `margin` px of a fixed tome wall?
+func _inside_fixture(p: Vector2, margin: float) -> bool:
+	if not is_instance_valid(fixtures):
+		return false
+	for wall in fixtures.get_children():
+		if not (wall is Node2D) or wall.is_queued_for_deletion():
+			continue
+		var half := _fixture_half_size(wall) + Vector2.ONE * margin
+		var d := (p - (wall as Node2D).global_position).abs()
+		if d.x <= half.x and d.y <= half.y:
+			return true
+	return false
+
+
+func _fixture_half_size(wall: Node) -> Vector2:
+	var shape_node := wall.get_node_or_null("Shape") as CollisionShape2D
+	if shape_node and shape_node.shape is RectangleShape2D:
+		return (shape_node.shape as RectangleShape2D).size * 0.5
+	return Vector2(23, 15)
+
+
+## `p` itself if the player can stand there, otherwise the closest point
+## around it that they can. Used for the spot the player walks in at.
+func _nearest_open_point(p: Vector2) -> Vector2:
+	const CLEARANCE := 14.0
+	if _is_open_floor(p, CLEARANCE):
+		return p
+	for ring in range(1, 16):
+		var r := ring * 16.0
+		for step in 16:
+			var q := p + Vector2.from_angle(TAU * step / 16.0) * r
+			if _is_open_floor(q, CLEARANCE):
+				return q
+	return p
+
+
 ## Build the navigation mesh for the current floor and objects.
 ## GDD, Enemy Adaptation: "Routes around walls and destructible cover while
 ## chasing the player". Walls are the floor outline; cover, barrels and
@@ -402,8 +653,8 @@ func bake_navigation() -> void:
 		if not (obj is EnvObject) or not is_instance_valid(obj) or obj.is_queued_for_deletion():
 			continue
 		var e := obj as EnvObject
-		if e.kind == EnvObject.Kind.COVER and e.hits_taken >= EnvObject.COVER_HITS_TO_BREAK:
-			continue
+		if e.is_spent():
+			continue   # a broken stack or a blown barrel is just floor
 		var half := _obstacle_half_size(e)
 		if e.kind == EnvObject.Kind.TRAP:
 			if not e.trap_armed:
@@ -418,10 +669,7 @@ func bake_navigation() -> void:
 	for wall in get_tree().get_nodes_in_group("fixture"):
 		if not (wall is Node2D) or wall.is_queued_for_deletion():
 			continue
-		var shape_node := wall.get_node_or_null("Shape") as CollisionShape2D
-		var half := Vector2(23, 15)
-		if shape_node and shape_node.shape is RectangleShape2D:
-			half = (shape_node.shape as RectangleShape2D).size * 0.5
+		var half := _fixture_half_size(wall)
 		var c: Vector2 = (wall as Node2D).global_position
 		src.add_obstruction_outline(PackedVector2Array([
 			c + Vector2(-half.x, -half.y), c + Vector2(half.x, -half.y),
@@ -443,7 +691,61 @@ func _obstacle_half_size(e: EnvObject) -> Vector2:
 	return Vector2(16, 12)
 
 
-## The door anchor closest to `from`, as {"name": String, "position": Vector2}.
+# --------------------------------------------------------------------------
+# Doors
+# --------------------------------------------------------------------------
+
+## Set the lock state AND swap the door seals to match. Call this rather
+## than assigning doors_locked, so the two never disagree.
+func lock_and_show(locked: bool) -> void:
+	doors_locked = locked
+	_refresh_door_visuals()
+	if not locked:
+		doors_unlocked.emit()
+
+
+## The direction that leads out of the room through `door`.
+func door_outward(door: Node2D) -> Vector2:
+	var door_name := String(door.name)
+	if door_name.begins_with("DoorNorth"):
+		return Vector2.UP
+	if door_name.begins_with("DoorSouth"):
+		return Vector2.DOWN
+	if door_name.begins_with("DoorWest"):
+		return Vector2.LEFT
+	if door_name.begins_with("DoorEast"):
+		return Vector2.RIGHT
+	var out := door.global_position - floor_centre()
+	return out.normalized() if out.length() > 0.01 else Vector2.UP
+
+
+## GDD input: "WASD to walk through a door. Crossing the threshold starts
+## the room." Only open doors let the player through, and only when they
+## are walking into one - standing next to a door as the last enemy falls
+## does not whisk them away.
+func _check_doors() -> void:
+	if doors_locked or room_index >= ROOMS_PER_RUN:
+		return
+	var player := _player()
+	if player == null or player.is_dead:
+		return
+	var move := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	if move == Vector2.ZERO:
+		return
+	for door in doors.get_children():
+		if not (door is Node2D):
+			continue
+		var d := door as Node2D
+		if d.global_position.distance_to(player.global_position) > DOOR_TRIGGER_PX:
+			continue
+		if move.dot(door_outward(d)) < DOOR_WALK_DOT:
+			continue
+		state = State.EXITED
+		door_crossed.emit(String(d.name))
+		return
+
+
+## The door anchor closest to `from`, as {"name", "position", "distance"}.
 func nearest_door(from: Vector2) -> Dictionary:
 	var best := {"name": "", "position": Vector2.ZERO, "distance": INF}
 	for door in doors.get_children():
@@ -471,6 +773,8 @@ func entry_point_opposite(door_name: String) -> Vector2:
 			left = minf(left, p.x); right = maxf(right, p.x)
 	if door_name.begins_with("DoorNorth"):
 		return Vector2(c.x, bottom - 70.0)
+	if door_name.begins_with("DoorSouth"):
+		return Vector2(c.x, top + 70.0)
 	if door_name.begins_with("DoorWest"):
 		return Vector2(right - 90.0, c.y)
 	if door_name.begins_with("DoorEast"):
@@ -478,61 +782,76 @@ func entry_point_opposite(door_name: String) -> Vector2:
 	return c
 
 
-# --------------------------------------------------------------------------
-# Door visuals - built
-# --------------------------------------------------------------------------
-
-## Set the lock state AND swap the door art to match. Call this rather than
-## assigning doors_locked, so the two never disagree.
-func lock_and_show(locked: bool) -> void:
-	doors_locked = locked
-	_refresh_door_visuals()
-	if not locked:
-		doors_unlocked.emit()
-
-
+## Each door anchor carries a "Seal": a strip of light across the threshold.
+## Locked, it is Blood Rust with a crossed bar; open, it is Bone and pulses.
+## The archways themselves are painted into the room background, so this is
+## the only part of a door that changes.
 func _refresh_door_visuals() -> void:
 	if not is_instance_valid(doors):
 		return
 	for door in doors.get_children():
-		# Doors are Marker2D anchors right now: the archways are painted into
-		# the room background, so there is no sprite to swap. They mark WHERE
-		# a door is, which is what spawning and the lock state need.
-		#
-		# TODO(K'von): locked/unlocked art. Two options, both fine:
-		#   - a Sprite2D overlay per door, swapped on lock state
-		#   - render each room twice (doors shut / doors open) and swap the
-		#     background, which costs more disk but zero seams
-		# Until then the lock is enforced by Bounds, which is correct during
-		# combat anyway: the GDD locks doors for the whole fight and only
-		# unlocks once the last wave is down.
-		if door is CanvasItem:
-			(door as CanvasItem).modulate = (
-					Palette.BLOOD_RUST if doors_locked else Color.WHITE)
+		if not (door is Node2D):
+			continue
+		var seal := _seal_for(door as Node2D)
+		var glow := seal.get_node("Glow") as Polygon2D
+		var bars := seal.get_node("Bars") as Node2D
+		bars.visible = doors_locked
+		if doors_locked:
+			glow.color = Color(Palette.BLOOD_RUST, 0.55)
+		else:
+			glow.color = Color(Palette.BONE, 0.75)
+
+
+func _pulse_open_doors() -> void:
+	var alpha := 0.6 + 0.3 * sin(_door_pulse * 5.0)
+	for door in doors.get_children():
+		var seal := door.get_node_or_null("Seal")
+		if seal:
+			(seal.get_node("Glow") as Polygon2D).color = Color(Palette.BONE, alpha)
+
+
+## Find or build the seal under a door anchor.
+func _seal_for(door: Node2D) -> Node2D:
+	var seal := door.get_node_or_null("Seal") as Node2D
+	if seal:
+		return seal
+	seal = Node2D.new()
+	seal.name = "Seal"
+	seal.z_index = -5   # over the painted room, under everything that moves
+	door.add_child(seal)
+
+	# The strip lies across the doorway: wide for a north or south door,
+	# tall for a side door.
+	var outward := door_outward(door)
+	var side_door := absf(outward.x) > absf(outward.y)
+	var radii := Vector2(11, 30) if side_door else Vector2(34, 9)
+
+	var glow := Polygon2D.new()
+	glow.name = "Glow"
+	var pts := PackedVector2Array()
+	for i in 24:
+		var a := TAU * i / 24.0
+		pts.append(Vector2(cos(a) * radii.x, sin(a) * radii.y))
+	glow.polygon = pts
+	seal.add_child(glow)
+
+	var bars := Node2D.new()
+	bars.name = "Bars"
+	seal.add_child(bars)
+	for flip in [1.0, -1.0]:
+		var bar := Line2D.new()
+		bar.width = 3.0
+		bar.default_color = Palette.INK
+		bar.add_point(Vector2(-radii.x, -radii.y * flip) * 0.7)
+		bar.add_point(Vector2(radii.x, radii.y * flip) * 0.7)
+		bars.add_child(bar)
+	return seal
 
 
 ## A spawn marker at least MIN_SPAWN_DISTANCE_PX from `from_position`.
-## Returns the farthest marker if none qualifies, so spawning never fails.
 ## GDD: "Enemies spawn at least 200 px from the player".
 func pick_spawn_point(from_position: Vector2) -> Vector2:
-	var best: Vector2 = global_position
-	var best_distance := -1.0
-	var valid: Array[Vector2] = []
-
-	for marker in spawn_markers.get_children():
-		if not (marker is Node2D):
-			continue
-		var p: Vector2 = (marker as Node2D).global_position
-		var d := p.distance_to(from_position)
-		if d >= MIN_SPAWN_DISTANCE_PX:
-			valid.append(p)
-		if d > best_distance:
-			best_distance = d
-			best = p
-
-	if valid.is_empty():
-		return best
-	return valid[randi() % valid.size()]
+	return _spawn_points_far_from(from_position)[0]
 
 
 ## The centre of the walkable floor, in room coordinates. Written into the

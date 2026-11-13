@@ -8,6 +8,59 @@ Read this before you start on your mechanic.
 
 ---
 
+## Update, 13 Nov: K'von's mechanics, per the GDD (branch `kvon-mechanics`)
+
+The `PREVIEW(K'von)` fills in `EnvObject.gd`, `RoomManager.gd` and
+`GameManager.gd` are replaced with the full rules. `tests/MechanicsTest.tscn`
+checks each one against the GDD number.
+
+**Environmental Combat** (`EnvObject.gd`)
+
+- **Barrel.** Pulses Ember after the first hit, detonates on the second or
+  at once inside a Shockwave. 30 damage to enemies within 96 px, source
+  `"barrel"`, so a kill pays double energy. The blast also costs the player
+  30 if they stand in it (the GDD architecture has EnvObject read the player
+  "for trap and blast damage"), counts as one hit on cover in range, and
+  chains other barrels. The preview's 30 px blast knockback is gone: the GDD
+  gives barrels no knockback.
+- **Cover.** Breaks on the 5th hit from any source: player shots, enemy
+  bullets, barrel blasts. Stops blocking the moment it breaks.
+- **Trap.** 15 damage to everyone on the plate when it fires, source
+  `"trap"`. Re-arms after 2 s, and fires again straight away if someone is
+  still standing on it (the preview only fired on walking in, so an enemy
+  parked on a plate was safe forever).
+
+**Room-Based Combat** (`RoomManager.gd`, `GameManager.gd`)
+
+- **State machine.** `RoomManager.state`: STARTING -> FIGHTING -> BETWEEN ->
+  ... -> CLEARED -> EXITED. Wave timing runs off the room's own clock, not
+  one-shot scene timers.
+- **Doors.** Each door anchor carries a seal across the threshold: Blood
+  Rust and barred while locked, pulsing Bone once the last wave is down.
+  Walking *into* an open door emits `door_crossed`, and GameManager starts
+  the next room; standing next to one does nothing.
+- **The elite court had no doors**, so a run could not get from room 7 to
+  the boss. `room_09` now has north, west and east doors in `layouts.json`.
+- **Spawn distance.** Every enemy spawns at least 200 px from the player,
+  always. A wave can outnumber the markers that are far enough away (7
+  enemies, 6 markers), so the rest go on open floor that passes the same
+  rule. The preview jittered them around a marker, which could land inside
+  200 px or inside a tome wall.
+- **Objects.** 1-3 per room on the layout's object markers, skipping any
+  marker a fixed tome wall stands on and the spot the player walks in at.
+- **Entry.** The player comes in opposite the door they left by, nudged to
+  the nearest clear floor if a tome wall is in the way. Bullets left over
+  from the last room are cleared.
+- The boss dying with minions alive no longer reports the room cleared
+  twice.
+
+Two one-line fixes outside K'von's scripts, both needed for the cross-links
+to hold: `Enemy.apply_knockback` now really carries the enemy the distance
+it is given (the Shockwave's 50 px was coming out as about 29 px, short of
+"can push enemies onto traps"), and `CombatRewards._drop_powerup` defers
+adding the pickup, which errored when the 5th kill landed inside a physics
+callback.
+
 ## Update, 13 Nov (later): ten layouts, the boss fight, and some feel
 
 **Ten layouts.** `layouts.json` now holds the GDD's ten. Seven are variants
