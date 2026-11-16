@@ -10,9 +10,9 @@ extends Node2D
 ##
 ## GDD input: "Q, only when the Graze Meter is at 100."
 ##
-## WHAT IS BUILT: the expanding ring visual at exactly RADIUS_PX, the 1 s
-## timing, the invulnerability window, and the ready/fired signals.
-## WHAT IS NOT: finding and affecting what is inside the radius.
+## The expanding ring, 1 s invulnerability window, meter cost, and radius
+## effects are implemented here. Enemy movement consumes the requested 50 px
+## knockback with collision-safe movement in Enemy.gd.
 
 # --------------------------------------------------------------------------
 # GDD numbers - section 4, Shockwave
@@ -63,7 +63,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func try_fire() -> bool:
-	if not is_ready or is_firing:
+	# Keep the signal-driven ready flag, but also verify the authoritative meter
+	# value so this cannot fire from stale state after another system spends it.
+	if not is_ready or is_firing or graze_meter.meter < COST:
 		return false
 	_fire()
 	return true
@@ -145,10 +147,10 @@ func _play_ring() -> void:
 
 	var tween := create_tween()
 	tween.set_parallel(true)
-	# Expand to the real radius over most of the activation second, easing out
-	# so the leading edge is fast - the player reads the clear instantly.
+	# Expand to the real radius over the full activation second, easing out so
+	# the leading edge is fast while the visual lasts as long as invulnerability.
 	tween.tween_property(ring, "scale", Vector2(RADIUS_PX, RADIUS_PX),
-			ACTIVATION_SECONDS * 0.7).set_trans(Tween.TRANS_CUBIC) \
+			ACTIVATION_SECONDS).set_trans(Tween.TRANS_CUBIC) \
 			.set_ease(Tween.EASE_OUT)
-	tween.tween_property(ring, "modulate:a", 0.0, ACTIVATION_SECONDS * 0.7)
+	tween.tween_property(ring, "modulate:a", 0.0, ACTIVATION_SECONDS)
 	tween.chain().tween_callback(func() -> void: ring.visible = false)
