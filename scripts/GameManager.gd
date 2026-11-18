@@ -16,9 +16,9 @@ extends Node2D
 ## like an autoload, via `GameManager.instance`. Only CombatRewards and
 ## Palette are true autoloads.
 ##
-## WHAT IS BUILT: scene wiring, the room counter, the victory and defeat
-## screens, run reset.
-## WHAT IS NOT: advancing between rooms, which waits on RoomManager.
+## WHAT IS BUILT: scene wiring, the room counter 1-8, advancing when the
+## player walks through an open door, the +10 HP room-clear heal, the
+## victory and defeat screens, and run reset.
 
 ## "Rooms per run 8"
 const ROOMS_PER_RUN: int = 8
@@ -34,15 +34,21 @@ static var instance: GameManager
 var room_index: int = 1
 var is_run_over: bool = false
 
-## PREVIEW(K'von): after a clear, the next room starts when the player walks
-## up to a door. "Crossing the threshold starts the room."
-const DOOR_TRIGGER_PX: float = 44.0
-var _awaiting_door: bool = false
+## A little camera shake on big hits. Decays on its own; callers just add.
+var _shake: float = 0.0
+const SHAKE_DECAY_PER_SECOND: float = 22.0
+
+
+func shake(amount: float) -> void:
+	_shake = minf(_shake + amount, 18.0)
 
 @onready var player: Player = $Player
 @onready var room: RoomManager = $Room
 @onready var hud: CanvasLayer = $HUD
 @onready var camera: Camera2D = $Player/Camera
+
+## Equipment and heart drops (not in the GDD; see Items.gd).
+var loot: LootDrops
 
 
 func _ready() -> void:
@@ -56,6 +62,11 @@ func _ready() -> void:
 		player.died.connect(_on_player_died)
 	if room:
 		room.room_cleared.connect(_on_room_cleared)
+		room.door_crossed.connect(_advance_room)
+	loot = LootDrops.new()
+	loot.name = "LootDrops"
+	add_child(loot)
+	loot.setup(room, player)
 
 	start_run()
 
@@ -68,26 +79,30 @@ func start_run() -> void:
 	CombatRewards.reset_for_new_run()
 	run_started.emit()
 	room_changed.emit(room_index)
-	_awaiting_door = false
 	room.start_room(room_index)
 	# Stand the player on the floor of whichever layout came up.
-	player.global_position = room.floor_centre() + Vector2(0, 70)
+	player.global_position = room.entry_point
 
 
-func _process(_delta: float) -> void:
-	if is_run_over or not _awaiting_door or not is_instance_valid(player):
-		return
-	var door := room.nearest_door(player.global_position)
-	if door["distance"] <= DOOR_TRIGGER_PX:
-		_advance_room(String(door["name"]))
+func _process(delta: float) -> void:
+	if is_instance_valid(camera):
+		if _shake > 0.0:
+			_shake = maxf(0.0, _shake - SHAKE_DECAY_PER_SECOND * delta)
+			camera.offset = Vector2(randf_range(-_shake, _shake), randf_range(-_shake, _shake))
+		else:
+			camera.offset = Vector2.ZERO
 
 
+## The player walked through `through_door` of a cleared room.
+## GDD: "WASD to walk through a door. Crossing the threshold starts the
+## room." The new room locks behind them and they come in on the far side.
 func _advance_room(through_door: String) -> void:
-	_awaiting_door = false
+	if is_run_over or room_index >= ROOMS_PER_RUN:
+		return
 	room_index += 1
 	room_changed.emit(room_index)
-	room.start_room(room_index)
-	player.global_position = room.entry_point_opposite(through_door)
+	room.start_room(room_index, through_door)
+	player.global_position = room.entry_point
 	var meter := player.get_node_or_null("GrazeMeter")
 	if meter:
 		meter.reset_for_new_room()
@@ -103,10 +118,9 @@ func _on_room_cleared(_cleared_index: int) -> void:
 	if room_index >= BOSS_ROOM:
 		win()
 		return
-
-	# PREVIEW(K'von): wait for the player to walk to a door; _process does
-	# the actual advance.
-	_awaiting_door = true
+	# Otherwise the doors are open now. RoomManager emits `door_crossed`
+	# when the player walks through one, and _advance_room takes it from
+	# there.
 
 
 func _on_player_died() -> void:
@@ -119,6 +133,7 @@ func win() -> void:
 	if is_run_over:
 		return
 	is_run_over = true
+	room.stop()
 	run_won.emit()
 	hud.show_end_screen(true)
 
@@ -129,6 +144,7 @@ func lose() -> void:
 	if is_run_over:
 		return
 	is_run_over = true
+	room.stop()
 	player.is_dead = true
 	player.play_death()
 	run_lost.emit()

@@ -61,7 +61,7 @@ static func entry(index: int) -> Dictionary:
 static func geometry_for(index: int) -> Dictionary:
 	var g := framing().duplicate(true)
 	var e := entry(index)
-	for key in ["floor_polygon", "floor_centre", "doors", "spawn_markers", "object_markers"]:
+	for key in ["floor_polygon", "floor_centre", "doors", "spawn_markers", "object_markers", "fixtures", "title"]:
 		if e.has(key):
 			g[key] = e[key]
 	return g
@@ -69,10 +69,26 @@ static func geometry_for(index: int) -> Dictionary:
 
 ## The background texture for one layout, or null if it will not load.
 static func texture_for(index: int) -> Texture2D:
+	return _texture(index, "image", true)
+
+
+## The same room painted with its doors standing open (`image_open` in the
+## manifest), or null for a room that has no such painting - the boss arena
+## and the elite court, whose art has no doors.
+static func open_texture_for(index: int) -> Texture2D:
+	return _texture(index, "image_open", false)
+
+
+static func _texture(index: int, key: String, required: bool) -> Texture2D:
 	var rooms := all()
 	if index < 0 or index >= rooms.size():
 		return null
-	var path: String = ROOMS_DIR + str(rooms[index].get("image", ""))
+	var file := str(rooms[index].get(key, ""))
+	if file == "":
+		if required:
+			push_warning("RoomLayouts: layout %d has no %s" % [index, key])
+		return null
+	var path: String = ROOMS_DIR + file
 	if not ResourceLoader.exists(path):
 		push_warning("RoomLayouts: missing image %s" % path)
 		return null
@@ -93,7 +109,7 @@ static func draw_unused(used: Array) -> int:
 	var available: Array[int] = []
 	var standins: Array[int] = []
 	for i in rooms.size():
-		if i in used or _flag(rooms[i], "boss"):
+		if i in used or _flag(rooms[i], "boss") or _flag(rooms[i], "elite"):
 			continue
 		if _flag(rooms[i], "standin"):
 			standins.append(i)
@@ -108,9 +124,14 @@ static func draw_unused(used: Array) -> int:
 
 ## The layout tagged `"boss": true`, or -1 if none is.
 static func boss_layout() -> int:
+	return tagged_layout("boss")
+
+
+## The first layout carrying `tag: true` ("boss", "elite"), or -1.
+static func tagged_layout(tag: String) -> int:
 	var rooms := all()
 	for i in rooms.size():
-		if _flag(rooms[i], "boss"):
+		if _flag(rooms[i], tag):
 			return i
 	return -1
 

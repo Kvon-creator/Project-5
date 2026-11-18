@@ -165,4 +165,6 @@ func _drop_powerup(at: Vector2) -> void:
 		var objects := gm.room.get_node_or_null("Objects")
 		if objects:
 			parent = objects
-	parent.add_child(pickup)
+	# Deferred: a kill usually lands inside a physics callback (a bullet or a
+	# trap touching the enemy), and an Area2D cannot join the tree then.
+	parent.add_child.call_deferred(pickup)

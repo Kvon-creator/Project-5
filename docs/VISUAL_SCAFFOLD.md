@@ -8,6 +8,156 @@ Read this before you start on your mechanic.
 
 ---
 
+## Update, 17 Nov: equipment and power-up drops (not in the GDD)
+
+Fourteen drops on top of the GDD's six mechanics: extra lives, a heal, four
+abilities and eight changes to the knight's shots. The README has the table.
+The GDD's own drop (Jarman's damage shell, every 5th kill) is untouched.
+
+**Who reads what.** New scripts, none of which change a GDD number:
+
+| Script | Holds | Read by |
+|---|---|---|
+| `Items.gd` | the catalogue and every proposed number | everything below |
+| `Loadout.gd` | what the knight owns this run, lives, ability cooldowns; runs the dash and bomb | Player, HUD, ItemPickup, LootDrops |
+| `LootDrops.gd` | when drops appear (room clear, elite, heart) | made by GameManager |
+| `ItemPickup.gd` | one item on the floor | |
+| `WardPage.gd`, `Familiar.gd`, `InkBomb.gd`, `BurnEffect.gd` | one ability or effect each | |
+
+**Touches to owned scripts**, all small and marked in their comments:
+
+- `Player.gd` (Daryl): builds the Loadout in `_ready`; `_fire` asks it for
+  the shot pattern and to decorate each bullet; movement uses the dash
+  velocity while dashing; `take_damage` spends a life before emitting
+  `died`; new `grant_mercy()` and `heal()`. With nothing picked up, it
+  plays exactly as before.
+- `PlayerBullet.gd` (Daryl): optional pierce, homing, bounces, burn, chain,
+  knockback and size. All off by default.
+- `HUD.gd` (Daryl): lives, item row, ability slots and pickup banner, built
+  at runtime like the boss bar.
+- `RoomManager.gd`: an `enemy_spawned` signal. `GameManager.gd`: makes
+  LootDrops. `project.godot`: `dash` (Space) and `ability` (E).
+
+**Cross-links with the GDD mechanics.** A Blot Bomb sets off barrels like
+the Shockwave does, and the barrel's kills still pay double. Burn, chain
+and familiar kills are "player" kills, so they pay normal energy. Dash and
+revive mercy use the same timer as the post-hit window, so traps, blasts
+and bullets all respect it.
+
+**Art.** Icons are game-icons.net SVGs (CC BY 3.0, `CREDITS.md`), stored
+unmodified in `docs/reference/items/`. `pipeline/item_icons.py` has Godot
+rasterise them (`pipeline/rasterize_svg.gd`) and paints each into a
+medallion whose shape gives the kind: round for lives and heals, diamond
+for abilities, hexagon for attack changes.
+
+`tests/ItemsTest.tscn` checks every item (51 checks).
+
+## Update, 13 Nov: K'von's mechanics, per the GDD (branch `kvon-mechanics`)
+
+The `PREVIEW(K'von)` fills in `EnvObject.gd`, `RoomManager.gd` and
+`GameManager.gd` are replaced with the full rules. `tests/KvonMechanicsTest.tscn`
+checks each one against the GDD number.
+
+**Environmental Combat** (`EnvObject.gd`)
+
+- **Barrel.** Pulses Ember after the first hit, detonates on the second or
+  at once inside a Shockwave. 30 damage to enemies within 96 px, source
+  `"barrel"`, so a kill pays double energy. The blast also costs the player
+  30 if they stand in it (the GDD architecture has EnvObject read the player
+  "for trap and blast damage"), counts as one hit on cover in range, and
+  chains other barrels. The preview's 30 px blast knockback is gone: the GDD
+  gives barrels no knockback.
+- **Cover.** Breaks on the 5th hit from any source: player shots, enemy
+  bullets, barrel blasts. Stops blocking the moment it breaks.
+- **Trap.** 15 damage to everyone on the plate when it fires, source
+  `"trap"`. Re-arms after 2 s, and fires again straight away if someone is
+  still standing on it (the preview only fired on walking in, so an enemy
+  parked on a plate was safe forever).
+
+**Room-Based Combat** (`RoomManager.gd`, `GameManager.gd`)
+
+- **State machine.** `RoomManager.state`: STARTING -> FIGHTING -> BETWEEN ->
+  ... -> CLEARED -> EXITED. Wave timing runs off the room's own clock, not
+  one-shot scene timers.
+- **Doors.** Each door anchor carries a seal across the threshold: Blood
+  Rust and barred while locked, pulsing Bone once the last wave is down.
+  Walking *into* an open door emits `door_crossed`, and GameManager starts
+  the next room; standing next to one does nothing.
+- **Open-door paintings.** Each room with painted doors has a second
+  image, `room_NN_open.png` (`image_open` in `layouts.json`), and
+  `RoomManager` swaps the background to it when the doors unlock. Rooms 01,
+  02 and 04 are K'von's paintings (sources in `docs/reference/*-open.jpg`);
+  05-08 and 10 are the room 02 painting put through the same grade and
+  mirror as their closed image, by `open_rooms()` in
+  `pipeline/cutout_refs.py`. The boss arena and the elite court have no
+  painted doors, so they keep one image and rely on the seals. Room 01 now
+  has its own two north doors where the painting has them; its side
+  shutters stay shut in the open painting, so they are no longer exits.
+- **The elite court had no doors**, so a run could not get from room 7 to
+  the boss. `room_09` now has north, west and east doors in `layouts.json`.
+- **Spawn distance.** Every enemy spawns at least 200 px from the player,
+  always. A wave can outnumber the markers that are far enough away (7
+  enemies, 6 markers), so the rest go on open floor that passes the same
+  rule. The preview jittered them around a marker, which could land inside
+  200 px or inside a tome wall.
+- **Objects.** 1-3 per room on the layout's object markers, skipping any
+  marker a fixed tome wall stands on and the spot the player walks in at.
+- **Entry.** The player comes in opposite the door they left by, nudged to
+  the nearest clear floor if a tome wall is in the way. Bullets left over
+  from the last room are cleared.
+- The boss dying with minions alive no longer reports the room cleared
+  twice.
+
+Two one-line fixes outside K'von's scripts, both needed for the cross-links
+to hold: `Enemy.apply_knockback` now really carries the enemy the distance
+it is given (the Shockwave's 50 px was coming out as about 29 px, short of
+"can push enemies onto traps"), and `CombatRewards._drop_powerup` defers
+adding the pickup, which errored when the 5th kill landed inside a physics
+callback.
+
+## Update, 13 Nov (later): ten layouts, the boss fight, and some feel
+
+**Ten layouts.** `layouts.json` now holds the GDD's ten. Seven are variants
+of the two paintings: `cutout_refs.py` grades (and sometimes mirrors) the
+image, and each entry lists `fixtures` - fixed tome walls (`Fixture.tscn`,
+on the wall layer, never break) that shape the floor: a centre block, three
+lanes, four pillars, a diagonal, a horseshoe, a ring. The navigation bake
+treats them as walls, so the same wave paths differently in each room,
+which is the point of the GDD's "routes around walls". `room_09` is tagged
+`elite` and used for room 7; `room_03` is tagged `boss` for room 8; both
+are kept out of the random draw. Each layout has a `title`.
+
+**The boss** has three phases by HP (see the README table): rings and
+aimed spreads, then a two-armed spiral and summoned hares, then a lunge.
+Constants are at the top of `Enemy.gd` under "The boss fight".
+
+**Feel.** `GameManager.shake()` - hits, Shockwave, barrels, boss phase
+changes. The HUD grows a wave counter and a boss bar with the phase name,
+both built at runtime in `HUD.gd` so `HUD.tscn` stays generated. Early
+rooms lean snail, later rooms lean hare, the elite court is mostly archers.
+
+## Update, 13 Nov: Enemy Adaptation, per the GDD (branch `backup-game`)
+
+The three Dec 2 rules are in `Enemy.gd` and `RoomManager.gd`:
+
+- **Pathing.** `RoomManager.bake_navigation()` bakes a `NavigationPolygon`
+  from the room's floor outline minus every intact tome stack, every barrel
+  and every *armed* trap (grown to the 75 px clearance), and rebakes when
+  one breaks, blows up, or arms/disarms. An enemy with an obstacle or
+  hazard within `OBSTACLE_DETECTION_PX` (200) follows the agent's path;
+  otherwise a straight line is the path.
+- **Hazard avoidance.** Armed traps are routed around by the mesh, and
+  `_hazard_repulsion` is the safety net inside 75 px, turning sideways when
+  the plate is dead ahead so the enemy does not stall. Knockback is not
+  steered - that is how the player pushes an enemy onto a trap.
+- **Ranged positioning.** `_cover_point` puts a hare or the scribe just
+  behind a tome stack that sits about a band-width from the player; with no
+  cover in range it holds the band and drifts sideways inside it. The
+  boosted band and 1 s recalc from Combat Rewards still apply.
+
+`tests/Screenshot.tscn` now also runs a trap-between-enemy-and-knight
+scenario and prints whether the enemy avoided it and got past.
+
 ## Update, 12 Nov: the playable preview
 
 Everything below still holds, with these changes on top.
@@ -78,10 +228,10 @@ only thing added.
 |---|---|---|---|---|
 | Bullet Grazing | Daryl Watkins-Mattocks | Nov 18 | `GrazeMeter.gd` | stub + visuals done |
 | Shockwave | Daryl Watkins-Mattocks | Nov 18 | `Shockwave.gd` | stub + ring visual done |
-| Room-Based Combat | K'von Gates | Nov 18 | `RoomManager.gd` | stub + room/doors done |
-| Combat Rewards | Jarman | Nov 18 | `CombatRewards.gd` | stub + timer done |
+| Room-Based Combat | K'von Gates | Nov 18 | `RoomManager.gd` | PREVIEW fill; all 10 layouts in |
+| Combat Rewards | Jarman | Nov 18 | `CombatRewards.gd` | **done** (12 Nov) |
 | Environmental Combat | K'von Gates | Dec 2 | `EnvObject.gd` | stub + 3 objects done |
-| Enemy Adaptation | Jarman | Dec 2 | `Enemy.gd` | stub + sprites done |
+| Enemy Adaptation | Jarman | Dec 2 | `Enemy.gd` | **done** (13 Nov, `backup-game`) |
 
 Support scripts, same table:
 
