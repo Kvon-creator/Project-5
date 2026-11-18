@@ -1,0 +1,141 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scripts/Player.gd" id="s_player"]
+[ext_resource type="Script" path="res://scripts/GrazeMeter.gd" id="s_graze"]
+[ext_resource type="Script" path="res://scripts/Shockwave.gd" id="s_shock"]
+[ext_resource type="Texture2D" path="res://assets/sprites/refs/hero.png" id="t_ref"]
+
+[sub_resource type="Gradient" id="Grad_shadow"]
+offsets = PackedFloat32Array(0, 0.55, 1)
+colors = PackedColorArray(0, 0, 0, 1, 0, 0, 0, 0.55, 0, 0, 0, 0)
+
+[sub_resource type="GradientTexture2D" id="Tex_shadow"]
+gradient = SubResource("Grad_shadow")
+width = 64
+height = 64
+fill = 1
+fill_from = Vector2(0.5, 0.5)
+fill_to = Vector2(0.5, 0)
+
+[sub_resource type="SpriteFrames" id="SF_player"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_ref")
+}],
+"loop": true,
+"name": &"idle_SE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_ref")
+}],
+"loop": true,
+"name": &"idle_E",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_ref")
+}],
+"loop": true,
+"name": &"idle_NE",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_ref")
+}],
+"loop": true,
+"name": &"idle_N",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_ref")
+}],
+"loop": true,
+"name": &"idle_NW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_ref")
+}],
+"loop": true,
+"name": &"idle_W",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_ref")
+}],
+"loop": true,
+"name": &"idle_SW",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("t_ref")
+}],
+"loop": true,
+"name": &"idle_S",
+"speed": 5.0
+}]
+
+[sub_resource type="CircleShape2D" id="Sh_hit"]
+radius = 8.0
+
+[sub_resource type="CircleShape2D" id="Sh_graze"]
+radius = 28.0
+
+[node name="Player" type="CharacterBody2D"]
+collision_layer = 1
+collision_mask = 48
+script = ExtResource("s_player")
+
+[node name="Shadow" type="Sprite2D" parent="."]
+texture = SubResource("Tex_shadow")
+modulate = Color(0, 0, 0, 0.58)
+scale = Vector2(1.10, 0.36)
+position = Vector2(0, 2)
+z_index = -1
+
+[node name="Sprite" type="AnimatedSprite2D" parent="."]
+sprite_frames = SubResource("SF_player")
+animation = &"idle_SE"
+offset = Vector2(0, -36)
+
+[node name="Hitbox" type="CollisionShape2D" parent="."]
+shape = SubResource("Sh_hit")
+
+[node name="Muzzle" type="Marker2D" parent="."]
+position = Vector2(10, -14)
+
+[node name="GrazeArea" type="Area2D" parent="."]
+collision_layer = 64
+collision_mask = 8
+monitorable = false
+
+[node name="Shape" type="CollisionShape2D" parent="GrazeArea"]
+shape = SubResource("Sh_graze")
+
+[node name="GrazeMeter" type="Node2D" parent="."]
+script = ExtResource("s_graze")
+
+[node name="Shockwave" type="Node2D" parent="."]
+script = ExtResource("s_shock")
+
+[node name="Ring" type="Line2D" parent="Shockwave"]
+visible = false
+width = 3.0
+default_color = Color(1, 0.788235, 0.235294, 1)
+
+[node name="Camera" type="Camera2D" parent="."]
+position_smoothing_enabled = true
+position_smoothing_speed = 8.0
+limit_left = 0
+limit_top = 0
+limit_right = 1152
+limit_bottom = 640

@@ -1,0 +1,189 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/HUD.gd" id="s_hud"]
+
+[sub_resource type="StyleBoxFlat" id="Sb_bg"]
+bg_color = Color(0.070588, 0.054902, 0.101961, 0.85)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.070588, 0.054902, 0.101961, 1)
+[sub_resource type="StyleBoxFlat" id="Sb_hp"]
+bg_color = Color(0.941176, 0.415686, 0.164706, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+[sub_resource type="StyleBoxFlat" id="Sb_meter"]
+bg_color = Color(1, 0.788235, 0.235294, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+[sub_resource type="StyleBoxFlat" id="Sb_boost"]
+bg_color = Color(0.207843, 0.839216, 0.768627, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+[sub_resource type="StyleBoxFlat" id="Sb_panel"]
+bg_color = Color(0.070588, 0.054902, 0.101961, 0.94)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.847059, 0.784314, 0.658824, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[node name="HUD" type="CanvasLayer"]
+script = ExtResource("s_hud")
+
+[node name="Root" type="Control" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="TopLeft" type="VBoxContainer" parent="Root"]
+offset_left = 24.0
+offset_top = 20.0
+offset_right = 324.0
+offset_bottom = 92.0
+theme_override_constants/separation = 6
+
+[node name="HPBar" type="ProgressBar" parent="Root/TopLeft"]
+custom_minimum_size = Vector2(300, 26)
+max_value = 100.0
+value = 100.0
+show_percentage = false
+theme_override_styles/background = SubResource("Sb_bg")
+theme_override_styles/fill = SubResource("Sb_hp")
+
+[node name="HPLabel" type="Label" parent="Root/TopLeft/HPBar"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+text = "100 / 100"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.847059, 0.784314, 0.658824, 1)
+theme_override_font_sizes/font_size = 14
+
+[node name="BoostBar" type="ProgressBar" parent="Root/TopLeft"]
+visible = false
+custom_minimum_size = Vector2(220, 16)
+max_value = 10.0
+value = 0.0
+show_percentage = false
+theme_override_styles/background = SubResource("Sb_bg")
+theme_override_styles/fill = SubResource("Sb_boost")
+
+[node name="BoostLabel" type="Label" parent="Root/TopLeft/BoostBar"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+text = "+20%  10.0s"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.847059, 0.784314, 0.658824, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="TopRight" type="VBoxContainer" parent="Root"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -260.0
+offset_top = 20.0
+offset_right = -24.0
+offset_bottom = 52.0
+alignment = 2
+
+[node name="RoomLabel" type="Label" parent="Root/TopRight"]
+text = "ROOM  1 / 8"
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0.847059, 0.784314, 0.658824, 1)
+theme_override_font_sizes/font_size = 18
+
+[node name="BottomCentre" type="VBoxContainer" parent="Root"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -210.0
+offset_top = -78.0
+offset_right = 210.0
+offset_bottom = -22.0
+theme_override_constants/separation = 6
+
+[node name="ShockwaveHint" type="Label" parent="Root/BottomCentre"]
+visible = false
+text = "SHOCKWAVE READY  -  press Q"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.788235, 0.235294, 1)
+theme_override_font_sizes/font_size = 15
+
+[node name="MeterBar" type="ProgressBar" parent="Root/BottomCentre"]
+custom_minimum_size = Vector2(420, 22)
+max_value = 100.0
+value = 0.0
+show_percentage = false
+theme_override_styles/background = SubResource("Sb_bg")
+theme_override_styles/fill = SubResource("Sb_meter")
+
+[node name="MeterLabel" type="Label" parent="Root/BottomCentre/MeterBar"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+text = "GRAZE  0 / 100"
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_colors/font_color = Color(0.847059, 0.784314, 0.658824, 1)
+theme_override_font_sizes/font_size = 13
+
+[node name="EndScreen" type="Control" parent="Root"]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 0
+
+[node name="Panel" type="PanelContainer" parent="Root/EndScreen"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -110.0
+offset_right = 220.0
+offset_bottom = 110.0
+theme_override_styles/panel = SubResource("Sb_panel")
+
+[node name="VBox" type="VBoxContainer" parent="Root/EndScreen/Panel"]
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="Root/EndScreen/Panel/VBox"]
+text = "RUN OVER"
+horizontal_alignment = 1
+theme_override_colors/font_color = Color(1, 0.788235, 0.235294, 1)
+theme_override_font_sizes/font_size = 34
+
+[node name="Subtitle" type="Label" parent="Root/EndScreen/Panel/VBox"]
+text = "Restarting at room 1 with new layouts."
+horizontal_alignment = 1
+autowrap_mode = 2
+theme_override_colors/font_color = Color(0.847059, 0.784314, 0.658824, 1)
+theme_override_font_sizes/font_size = 15
+
+[node name="RestartButton" type="Button" parent="Root/EndScreen/Panel/VBox"]
+custom_minimum_size = Vector2(0, 44)
+text = "RUN AGAIN"

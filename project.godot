@@ -1,0 +1,97 @@
+; Project 5 - Godot 4 project configuration.
+;
+; Set up from the GDD: 2D game, pixel art pipeline from 3D renders, 1 m = 32 px.
+; Mechanics are NOT implemented here - see docs/VISUAL_SCAFFOLD.md for who
+; builds what.
+
+config_version=5
+
+[application]
+
+config/name="Project 5"
+config/description="Top-down roguelite bullet-hell. Visual scaffold - mechanics pending."
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.4", "Forward Plus")
+config/icon="res://assets/sprites/player/player_idle_anchor.png"
+
+[autoload]
+
+; GDD architecture: "CombatRewards.gd / autoload". No scene, pure state.
+CombatRewards="*res://scripts/CombatRewards.gd"
+; Palette lookups by GDD swatch name, so no hex code is ever retyped.
+Palette="*res://scripts/Palette.gd"
+
+[display]
+
+; 1152 x 648 is 36 x 20.25 metres at 1 m = 32 px. Comfortable for a room that
+; has to hold 4-6 enemies plus bullet patterns without the player losing the
+; 20 px graze window.
+window/size/viewport_width=1152
+window/size/viewport_height=648
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[importer_defaults]
+
+; Sprites come from the Blender pipeline at exact pixel sizes. Nearest
+; filtering keeps the ink outlines crisp instead of smearing them.
+texture={
+"compress/mode": 0,
+"detect_3d/compress_to": 0,
+"mipmaps/generate": false
+}
+
+[input]
+
+move_up={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":87,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+move_left={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":65,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+move_down={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":83,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+move_right={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":68,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+shoot={
+"deadzone": 0.2,
+"events": [Object(InputEventMouseButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"button_mask":0,"position":Vector2(0, 0),"global_position":Vector2(0, 0),"factor":1.0,"button_index":1,"canceled":false,"pressed":false,"double_click":false,"script":null)
+]
+}
+shockwave={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":81,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+
+[layer_names]
+
+; One layer per thing that needs to collide separately. The GDD's interaction
+; table drives this: grazing needs bullets on their own layer, Shockwave needs
+; to find bullets + enemies + barrels, EnvObject needs player and enemies.
+2d_physics/layer_1="player"
+2d_physics/layer_2="enemy"
+2d_physics/layer_3="player_bullet"
+2d_physics/layer_4="enemy_bullet"
+2d_physics/layer_5="env_object"
+2d_physics/layer_6="wall"
+2d_physics/layer_7="graze_area"
+2d_physics/layer_8="door"
+
+[rendering]
+
+; Avoid list: "Bloom, glow or particle effects that hide bullets or the player
+; hitbox." Default environment off so nothing sneaks glow in.
+textures/canvas_textures/default_texture_filter=0
+environment/defaults/default_clear_color=Color(0.070588, 0.054902, 0.101961, 1)
+anti_aliasing/quality/msaa_2d=0

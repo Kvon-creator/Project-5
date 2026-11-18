@@ -1,0 +1,89 @@
+{
+  "name": "room_01",
+  "image": "room_01.png",
+  "size": [
+    1152,
+    640
+  ],
+  "floor_polygon": [
+    [
+      130.1,
+      613.4
+    ],
+    [
+      1021.9,
+      613.4
+    ],
+    [
+      1021.9,
+      131.7
+    ],
+    [
+      130.1,
+      131.7
+    ]
+  ],
+  "doors": {
+    "north": [
+      576.0,
+      131.7
+    ],
+    "west": [
+      130.1,
+      372.6
+    ],
+    "east": [
+      1021.9,
+      372.6
+    ]
+  },
+  "spawn_markers": [
+    [
+      299.5,
+      232.8
+    ],
+    [
+      576.0,
+      213.6
+    ],
+    [
+      852.5,
+      232.8
+    ],
+    [
+      263.8,
+      396.6
+    ],
+    [
+      888.2,
+      396.6
+    ],
+    [
+      576.0,
+      505.0
+    ]
+  ],
+  "object_markers": [
+    [
+      397.6,
+      319.6
+    ],
+    [
+      754.4,
+      319.6
+    ],
+    [
+      576.0,
+      384.6
+    ],
+    [
+      370.9,
+      464.1
+    ],
+    [
+      781.1,
+      464.1
+    ]
+  ],
+  "notes": "Pixel coordinates in the rendered image. floor_polygon is the walkable boundary; the south edge has no painted wall because the camera looks in from that side, so its collision is invisible by design."
+}

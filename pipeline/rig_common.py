@@ -1,0 +1,1081 @@
+"""
+Project 5 - shared Blender render rig.
+
+Every asset in this game is rendered through THIS file so they all match.
+The GDD's Art direction section is the spec; the constants below are that spec
+turned into numbers.
+
+    Pipeline: model and texture in Blender -> render with an orthographic camera
+    at a fixed 3/4 angle, key light from the top-left -> 8-direction sprite
+    sheets -> Godot AnimatedSprite2D.
+
+Nothing here renders on its own. Asset scripts (player.py, enemy.py, ...)
+import this, build geometry, and call `render_sheet()`.
+
+Run an asset script with:
+    blender -b --python pipeline/player.py
+"""
+
+import math
+import os
+import sys
+
+import bpy
+from mathutils import Vector
+
+# --------------------------------------------------------------------------
+# GDD constants
+# --------------------------------------------------------------------------
+
+# "Every distance is in pixels. The kickoff's 3 m barrel radius converts at
+#  1 m = 32 px, so 96 px."
+PX_PER_METRE = 32
+
+# "fixed 3/4 top-down orthographic view"
+#
+# Elevation measured up from the floor plane. 45 deg is the balance point for
+# this game: high enough that the floor, bullet positions and the 20 px graze
+# window read clearly, low enough that a character still shows its FRONT and
+# not just its hat. Tried 55 first and every character rendered as a bell
+# shape, because vertical foreshortening at 55 deg is cos(55) = 0.57 - the
+# model loses nearly half its height before the silhouette is even drawn.
+# At 45 deg that factor is 0.71.
+#
+# Changing this changes every asset, so re-render the whole set if you touch
+# it: ./pipeline/render_all.sh
+CAMERA_ELEVATION_DEG = 45.0
+
+# "8-direction sprite sheets". Index 0 is the anchor pose (facing down-right),
+# then counter-clockwise in 45 deg steps. Godot reads the sheet left to right.
+DIRECTIONS = ["SE", "E", "NE", "N", "NW", "W", "SW", "S"]
+DIR_COUNT = len(DIRECTIONS)
+
+# --------------------------------------------------------------------------
+# Palette - from the GDD Palette table. Hex is authoritative, these are the
+# linear-space floats Blender wants.
+# --------------------------------------------------------------------------
+
+PALETTE_HEX = {
+    # --- SIGNAL -----------------------------------------------------------
+    # Gameplay colours. These survived the art-direction change unaltered,
+    # because the references already agreed with the GDD: the hero's nib
+    # glows teal, the boss fires magenta, his plume is ember.
+    "nib_teal": "35D6C4",         # Player shots, the pen-nib glow, power-ups
+    "hostile_magenta": "FF2E6E",  # Enemy bullets. Nothing else, ever.
+    "ember": "F06A2A",            # Hero plume, candle flame, barrels
+    "graze_gold": "FFC93C",       # Graze Meter, graze sparks, Shockwave ring
+
+    # --- WORLD ------------------------------------------------------------
+    # Measured from docs/reference by pipeline/extract_palette.py. These are
+    # LIGHTER and WARMER than the GDD's Crypt Stone / Stone Light, which were
+    # written before the references existed.
+    "parchment": "E2C5A8",        # Paper, cape, gilt filigree, UI text
+    "candle_warm": "BE9E91",      # Stone near a candle
+    "stone_lit": "8A8088",        # Floor in light - the room's main value
+    "stone_mid": "776B70",        # Wall faces
+    "stone_shadow": "554F59",     # Wall shadow, floor away from light
+    "ink_violet": "3C2C39",       # Deep shadow, recesses
+    "ink_black": "18030A",        # Ink pools, contour lines, the void
+    "gilt": "C8A24E",             # Gold vine work on walls
+
+    # --- CREATURE + HERO --------------------------------------------------
+    "creature_violet": "886181",  # Enemy flesh, fur, slug bodies
+    "creature_rust": "BA7977",    # Enemy hide, shells, cloth
+    "deep_plum": "421C39",        # Enemy shadow side
+    "steel": "868178",            # Hero armour
+    "blood_rust": "8E2A2A",       # Traps, damage flashes
+
+    # --- Legacy GDD names -------------------------------------------------
+    # cel_material() mixes toward "abyss" for shadow and "bone" for highlight,
+    # and older asset scripts still ask for these by name. Kept as aliases so
+    # nothing silently breaks; new work should use the names above.
+    "abyss": "18030A",            # -> ink_black
+    "bone": "E2C5A8",             # -> parchment
+    "crypt_stone": "554F59",      # -> stone_shadow
+    "stone_light": "776B70",      # -> stone_mid
+    "spirit_teal": "35D6C4",      # -> nib_teal
+}
+
+
+def srgb_to_linear(c: float) -> float:
+    """Blender works in linear light; hex codes are sRGB."""
+    if c <= 0.04045:
+        return c / 12.92
+    return ((c + 0.055) / 1.055) ** 2.4
+
+
+def hex_to_srgb(hex_str: str, alpha: float = 1.0):
+    """Hex -> sRGB floats. This is the space the palette is DEFINED in."""
+    hex_str = hex_str.lstrip("#")
+    return tuple(int(hex_str[i:i + 2], 16) / 255.0
+                 for i in (0, 2, 4)) + (alpha,)
+
+
+def srgb_to_linear_rgba(srgb):
+    """sRGB floats -> linear floats. Alpha is already linear, leave it."""
+    return tuple(srgb_to_linear(c) for c in srgb[:3]) + (srgb[3],)
+
+
+def hex_to_rgba(hex_str: str, alpha: float = 1.0):
+    """Hex -> linear floats, ready to hand to Blender."""
+    return srgb_to_linear_rgba(hex_to_srgb(hex_str, alpha))
+
+
+def pal(name: str, alpha: float = 1.0):
+    """Palette lookup by GDD swatch name, in linear space."""
+    return hex_to_rgba(PALETTE_HEX[name], alpha)
+
+
+def pal_srgb(name: str, alpha: float = 1.0):
+    """Palette lookup by GDD swatch name, in sRGB space."""
+    return hex_to_srgb(PALETTE_HEX[name], alpha)
+
+
+# --------------------------------------------------------------------------
+# Scene setup
+# --------------------------------------------------------------------------
+
+def clear_scene() -> None:
+    """Blender starts with a cube, a camera and a light. Remove all of it."""
+    bpy.ops.object.select_all(action="SELECT")
+    bpy.ops.object.delete(use_global=False)
+    for block in (bpy.data.meshes, bpy.data.materials, bpy.data.lights,
+                  bpy.data.cameras, bpy.data.images):
+        for item in list(block):
+            if item.users == 0:
+                block.remove(item)
+
+
+def setup_render(frame_px: int, subject_height_m: float,
+                 frame_height_m: float) -> None:
+    """
+    Configure EEVEE, the orthographic camera and the lights.
+
+    frame_px          - sprite frame is frame_px x frame_px (e.g. 128)
+    subject_height_m  - how tall the model is in metres (unused by the camera,
+                        kept so asset scripts document their own scale)
+    frame_height_m    - how many metres the frame covers top to bottom. This is
+                        what sets the pixels-per-metre of the final sprite.
+
+    A 128 px frame covering 4 m gives 32 px/m, which matches PX_PER_METRE, so
+    a 2 m tall player lands at 64 px - the anchor asset spec.
+    """
+    scene = bpy.context.scene
+
+    # EEVEE, because the cel shader below needs Shader-to-RGB, which Cycles
+    # does not support. The engine id was renamed across Blender versions
+    # (BLENDER_EEVEE -> BLENDER_EEVEE_NEXT in 4.2, back to BLENDER_EEVEE in
+    # 5.0), so pick whichever this build offers.
+    engines = scene.render.bl_rna.properties["engine"].enum_items.keys()
+    for candidate in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT"):
+        if candidate in engines:
+            scene.render.engine = candidate
+            break
+    else:
+        raise RuntimeError(f"No EEVEE engine in this Blender: {list(engines)}")
+    scene.render.resolution_x = frame_px
+    scene.render.resolution_y = frame_px
+    scene.render.resolution_percentage = 100
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.image_settings.color_mode = "RGBA"
+
+    # "plain background" - transparent, so sprites composite over the tiles.
+    scene.render.film_transparent = True
+
+    # Avoid list: "Bloom, glow or particle effects that hide bullets or the
+    # player hitbox." Newer EEVEE has no bloom pass at all; older builds do,
+    # and raytracing would soften the flat cel bands. Both are version
+    # dependent, so set only what this build actually has.
+    for attr, value in (("use_raytracing", False), ("use_bloom", False),
+                        ("use_gtao", False)):
+        if hasattr(scene.eevee, attr):
+            setattr(scene.eevee, attr, value)
+
+    # "Standard" view transform, not Filmic/AgX: the palette hexes must come
+    # out of the render as the hexes the GDD specifies, not tone-mapped.
+    scene.view_settings.view_transform = "Standard"
+    scene.view_settings.look = "None"
+
+    # Crisp sprite edges: no filtering blur beyond one pixel.
+    scene.render.filter_size = 1.0
+
+    _add_camera(frame_height_m)
+    _add_lights()
+    _setup_freestyle()
+
+
+def _add_camera(frame_height_m: float) -> None:
+    """
+    Orthographic camera, fixed 3/4 top-down, aimed at the origin.
+
+    The camera never moves between directions. Asset scripts rotate the MODEL
+    instead, which is what keeps the light direction constant across all eight
+    frames - the thing that makes a sheet look like one character.
+    """
+    cam_data = bpy.data.cameras.new("SpriteCam")
+    cam_data.type = "ORTHO"
+    cam_data.ortho_scale = frame_height_m
+
+    cam = bpy.data.objects.new("SpriteCam", cam_data)
+    bpy.context.collection.objects.link(cam)
+
+    # Place the camera on the -Y side, elevated, looking at the origin.
+    elev = math.radians(CAMERA_ELEVATION_DEG)
+    dist = 12.0
+    cam.location = (0.0,
+                    -dist * math.cos(elev),
+                    dist * math.sin(elev))
+    # Point it at the origin: tilt down from straight-down by the elevation.
+    cam.rotation_euler = (math.radians(90.0) - elev, 0.0, 0.0)
+
+    bpy.context.scene.camera = cam
+
+
+def _add_lights() -> None:
+    """
+    "strong top-left key light and warm rim light"
+
+    Key from the top-left so every asset's shadow falls the same way. The rim
+    is warm and comes from behind-right to lift the silhouette off dark floors.
+    """
+    # Energies are tuned to the 3-band ramp in cel_material(), not to realism.
+    # A Diffuse BSDF with albedo 1 turns sun irradiance E into radiance E/pi,
+    # so a face pointing straight at a 2.8 W sun reads 0.89 - just inside the
+    # top band - while a face at 45 deg reads 0.63 (mid band) and anything
+    # past 70 deg falls to shadow. That is what gives three visible steps
+    # instead of one flat silhouette.
+    key_data = bpy.data.lights.new("Key", type="SUN")
+    key_data.energy = 2.8
+    key_data.color = (1.0, 0.95, 0.88)      # near-white, a touch warm
+    key_data.angle = math.radians(8.0)      # slightly soft terminator
+    key = bpy.data.objects.new("Key", key_data)
+    bpy.context.collection.objects.link(key)
+    # Top-left: comes down from +Z, from the -X side.
+    key.rotation_euler = (math.radians(50.0), math.radians(-35.0),
+                          math.radians(25.0))
+
+    rim_data = bpy.data.lights.new("Rim", type="SUN")
+    rim_data.energy = 1.4
+    rim_data.color = hex_to_rgba(PALETTE_HEX["ember"])[:3]  # warm rim
+    rim = bpy.data.objects.new("Rim", rim_data)
+    bpy.context.collection.objects.link(rim)
+    # Behind and to the right, low, grazing the back edge.
+    rim.rotation_euler = (math.radians(105.0), math.radians(30.0),
+                          math.radians(200.0))
+
+    # A dim fill so the shadow side is readable rather than pure black. Kept
+    # cool so it sits in the Abyss / Crypt Stone end of the palette.
+    fill_data = bpy.data.lights.new("Fill", type="SUN")
+    fill_data.energy = 1.15
+    fill_data.color = (0.45, 0.42, 0.62)
+    fill = bpy.data.objects.new("Fill", fill_data)
+    bpy.context.collection.objects.link(fill)
+    fill.rotation_euler = (math.radians(70.0), math.radians(40.0),
+                           math.radians(-120.0))
+
+
+def _setup_freestyle() -> None:
+    """
+    "bold dark ink outlines"
+
+    Freestyle draws real line art over the render. Silhouette + border gives
+    the outer ink line; crease picks up the hard folds on a low-poly model.
+    """
+    scene = bpy.context.scene
+    scene.render.use_freestyle = True
+    scene.render.line_thickness_mode = "ABSOLUTE"
+    # 1.6 px at a 128 px frame: bold enough to read when the sprite is on a
+    # dark floor, thin enough not to eat a 64 px character.
+    scene.render.line_thickness = 1.6
+
+    view_layer = scene.view_layers[0]
+    view_layer.use_freestyle = True
+    view_layer.freestyle_settings.mode = "EDITOR"
+
+    # A fresh Blender scene ships with one empty line set; reuse or add.
+    fs = view_layer.freestyle_settings
+    if not fs.linesets:
+        fs.linesets.new("InkLines")
+    lineset = fs.linesets[0]
+    lineset.select_silhouette = True
+    lineset.select_border = True
+    lineset.select_crease = True
+    lineset.select_edge_mark = True
+    lineset.select_contour = False
+    lineset.select_material_boundary = True
+
+    linestyle = lineset.linestyle
+    linestyle.color = hex_to_rgba(PALETTE_HEX["abyss"])[:3]  # ink = Abyss
+    linestyle.thickness = 1.6
+    linestyle.alpha = 1.0
+    # Slight taper so the line feels drawn rather than traced.
+    linestyle.thickness_position = "CENTER"
+
+
+def set_ink(crease=True, material_boundary=True, thickness=None,
+            silhouette=True, border=True, hand_drawn=False,
+            calligraphy=0.35, wobble=0.35):
+    """
+    Tune the Freestyle line work after setup_render().
+
+    Why this is a knob rather than a constant: a character built from two
+    dozen primitives generates a crease line at every box corner, and at
+    64 px those interior lines merge into a black mass - the figure stops
+    reading as armour and becomes a blob. Environments are the opposite
+    case: they are large flat surfaces where crease lines are most of the
+    drawing.
+
+    So characters use crease=False (outline and colour boundaries only) and
+    rooms leave it on.
+
+    `hand_drawn` adds the modifiers that separate an INKED line from a
+    traced one:
+
+      calligraphy - thickness varies with the line's direction, the way a
+                    chisel nib lays down a wide stroke one way and a thin
+                    one across it. A line of constant width is the clearest
+                    tell that a contour was computed.
+      wobble      - a little Perlin displacement along the stroke, so edges
+                    are not mathematically exact.
+
+    Default OFF, and that is a size judgement rather than a taste one. A
+    character ships at 64 px with a 0.8 px contour, so calligraphic variation
+    across that line is sub-pixel - it cannot read as weight, it only blots
+    the figure in. Tried it on the knight and he came out a black silhouette.
+    Large renders are the opposite case: the room is 1152 px of big flat
+    forms, where line weight is one of the few places character can live.
+
+    So: rooms opt in, characters stay clean.
+    """
+    scene = bpy.context.scene
+    if thickness is not None:
+        scene.render.line_thickness = thickness
+    lineset = scene.view_layers[0].freestyle_settings.linesets[0]
+    lineset.select_silhouette = silhouette
+    lineset.select_border = border
+    lineset.select_crease = crease
+    lineset.select_material_boundary = material_boundary
+    ls = lineset.linestyle
+    if thickness is not None:
+        ls.thickness = thickness
+
+    if not hand_drawn:
+        return
+
+    # Rebuild modifiers each call so repeated set_ink() calls in one session
+    # do not stack duplicates.
+    for coll in (ls.thickness_modifiers, ls.geometry_modifiers,
+                 ls.alpha_modifiers):
+        for mod in list(coll):
+            coll.remove(mod)
+
+    ls.caps = "ROUND"
+
+    if calligraphy > 0.0:
+        base = ls.thickness
+        cal = ls.thickness_modifiers.new(name="Calligraphy",
+                                         type="CALLIGRAPHY")
+        cal.orientation = math.radians(38.0)
+        cal.thickness_min = base * (1.0 - calligraphy * 0.75)
+        cal.thickness_max = base * (1.0 + calligraphy)
+
+    if wobble > 0.0:
+        geo = ls.geometry_modifiers.new(name="Wobble",
+                                        type="PERLIN_NOISE_1D")
+        # Attribute names on Freestyle modifiers vary between Blender
+        # versions (this one takes `frequency`, not `scale`), so set only
+        # what the build actually exposes rather than assuming.
+        for attr, value in (("amplitude", wobble), ("frequency", 9.0),
+                            ("octaves", 3)):
+            if hasattr(geo, attr):
+                setattr(geo, attr, value)
+
+
+# --------------------------------------------------------------------------
+# Cel-shaded material
+# --------------------------------------------------------------------------
+
+def _noise_field(nt, scale, detail=5.0, y=-620):
+    """TexCoord -> Mapping -> Noise. Returns (noise_node, mapping_node)."""
+    tex_co = nt.nodes.new("ShaderNodeTexCoord")
+    tex_co.location = (-1400, y)
+    mapping = nt.nodes.new("ShaderNodeMapping")
+    mapping.location = (-1220, y)
+    nt.links.new(tex_co.outputs["Object"], mapping.inputs["Vector"])
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.location = (-1040, y)
+    noise.inputs["Scale"].default_value = scale
+    noise.inputs["Detail"].default_value = detail
+    nt.links.new(mapping.outputs["Vector"], noise.inputs["Vector"])
+    return noise, mapping
+
+
+def _break_up_bands(nt, lum_socket, amount, scale):
+    """
+    Add noise to luminance BEFORE the ramp, so shading boundaries wobble.
+
+    This is the single cheapest thing that makes a cel render look painted
+    rather than computed. A ramp applied to clean luminance produces a
+    shading edge that is mathematically smooth - a perfect curve no hand
+    would draw. Perturbing the luminance first makes that edge irregular, so
+    the boundary between lit and shadow reads as a brush decision.
+
+    Returns the socket to feed the ramp.
+    """
+    noise, _ = _noise_field(nt, scale, detail=6.0, y=-760)
+    offset = nt.nodes.new("ShaderNodeMapRange")
+    offset.location = (-860, -760)
+    offset.inputs["From Min"].default_value = 0.25
+    offset.inputs["From Max"].default_value = 0.75
+    offset.inputs["To Min"].default_value = -amount
+    offset.inputs["To Max"].default_value = amount
+    offset.clamp = False
+    nt.links.new(noise.outputs["Fac"], offset.inputs["Value"])
+
+    add = nt.nodes.new("ShaderNodeMath")
+    add.location = (-680, -700)
+    add.operation = "ADD"
+    nt.links.new(lum_socket, add.inputs[0])
+    nt.links.new(offset.outputs["Result"], add.inputs[1])
+    return add.outputs["Value"]
+
+
+def _paint_grain(nt, colour_socket, amount, scale):
+    """
+    Multiply the shaded colour by a gentle noise field.
+
+    Flat fills are the other tell of a computed image. Real paint varies in
+    density across a surface even where the light does not change, so each
+    band gets a slow brightness drift rather than one exact value.
+
+    Returns the socket carrying the grained colour.
+    """
+    noise, _ = _noise_field(nt, scale, detail=4.0, y=-900)
+    level = nt.nodes.new("ShaderNodeMapRange")
+    level.location = (-860, -900)
+    level.inputs["From Min"].default_value = 0.3
+    level.inputs["From Max"].default_value = 0.7
+    level.inputs["To Min"].default_value = 1.0 - amount
+    level.inputs["To Max"].default_value = 1.0 + amount
+    level.clamp = True
+    nt.links.new(noise.outputs["Fac"], level.inputs["Value"])
+
+    mult = nt.nodes.new("ShaderNodeMixRGB")
+    mult.location = (660, -200)
+    mult.blend_type = "MULTIPLY"
+    mult.inputs["Fac"].default_value = 1.0
+    nt.links.new(colour_socket, mult.inputs["Color1"])
+    nt.links.new(level.outputs["Result"], mult.inputs["Color2"])
+    return mult.outputs["Color"]
+
+
+def cel_material(name: str, base_hex_or_rgba, shadow_mix: float = 0.45,
+                 highlight_mix: float = 0.30, bands: int = 3,
+                 emission_strength: float = 1.0,
+                 edge_noise: float = 0.055, edge_scale: float = 11.0,
+                 paint_grain: float = 0.085, grain_scale: float = 7.0):
+    """
+    "cel-shaded with painterly brushstroke highlights"
+
+    How it works, in order:
+      1. A Diffuse BSDF gathers the real lighting from the three lamps.
+      2. Shader-to-RGB turns that lighting into a plain colour value. This is
+         the EEVEE-only trick that makes stylised shading possible at all.
+      3. A ColorRamp with CONSTANT interpolation snaps that smooth gradient
+         into `bands` hard steps - the cel look.
+      4. The steps are used to mix between a darkened and a lightened version
+         of the base colour, so every material stays inside its own hue.
+      5. Emission outputs the result, so the bands are not re-lit.
+
+    base_hex_or_rgba - a GDD hex string or an RGBA tuple
+    shadow_mix       - how far the dark band moves toward Abyss (0..1)
+    highlight_mix    - how far the lit band moves toward Bone (0..1)
+    bands            - number of hard shading steps
+    """
+    # Work in sRGB for the palette mixing below, because the GDD's swatches are
+    # sRGB hex codes and "25% toward Bone" has to mean 25% the way a person
+    # reading the palette would expect. Mixing in linear space instead lands
+    # far brighter and washes the hue out, because Bone's linear value is
+    # roughly nine times Stone Light's.
+    if isinstance(base_hex_or_rgba, str):
+        base_srgb = hex_to_srgb(base_hex_or_rgba)
+    else:
+        base_srgb = tuple(base_hex_or_rgba)
+        if len(base_srgb) == 3:
+            base_srgb = base_srgb + (1.0,)
+
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    out.location = (900, 0)
+
+    diffuse = nt.nodes.new("ShaderNodeBsdfDiffuse")
+    diffuse.location = (-600, 0)
+    diffuse.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+
+    to_rgb = nt.nodes.new("ShaderNodeShaderToRGB")
+    to_rgb.location = (-400, 0)
+    nt.links.new(diffuse.outputs["BSDF"], to_rgb.inputs["Shader"])
+
+    # Collapse RGB lighting to one luminance value before banding, so coloured
+    # lights do not split one band into three.
+    lum = nt.nodes.new("ShaderNodeRGBToBW")
+    lum.location = (-220, 0)
+    nt.links.new(to_rgb.outputs["Color"], lum.inputs["Color"])
+
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.location = (-40, 0)
+    ramp.color_ramp.interpolation = "CONSTANT"
+    _build_bands(ramp.color_ramp, bands)
+    lum_socket = lum.outputs["Val"]
+    if edge_noise > 0.0:
+        lum_socket = _break_up_bands(nt, lum_socket, edge_noise, edge_scale)
+    nt.links.new(lum_socket, ramp.inputs["Fac"])
+
+    # Darkened and lightened versions of the base colour. Mixed in sRGB, then
+    # converted to linear once, at the end.
+    shadow_rgba = srgb_to_linear_rgba(
+        _mix_rgba(base_srgb, pal_srgb("abyss"), shadow_mix))
+    light_rgba = srgb_to_linear_rgba(
+        _mix_rgba(base_srgb, pal_srgb("bone"), highlight_mix))
+
+    mix = nt.nodes.new("ShaderNodeMixRGB")
+    mix.location = (300, 0)
+    mix.blend_type = "MIX"
+    mix.inputs["Color1"].default_value = shadow_rgba
+    mix.inputs["Color2"].default_value = light_rgba
+    nt.links.new(ramp.outputs["Color"], mix.inputs["Fac"])
+
+    shaded = mix.outputs["Color"]
+    if paint_grain > 0.0:
+        shaded = _paint_grain(nt, shaded, paint_grain, grain_scale)
+
+    emit = nt.nodes.new("ShaderNodeEmission")
+    emit.location = (900, 0)
+    emit.inputs["Strength"].default_value = emission_strength
+    nt.links.new(shaded, emit.inputs["Color"])
+    nt.links.new(emit.outputs["Emission"], out.inputs["Surface"])
+
+    return mat
+
+
+def no_ink_collection():
+    """
+    A collection whose objects Freestyle will not outline.
+
+    Needed for things that are light rather than matter - a shaft falling
+    across a floor, a glow pooled under a flame. Freestyle outlines every
+    object, and an ink contour drawn around a beam of light reads as a
+    mistake rather than as a drawing.
+
+    Call once after setup_render(); put anything that should not be inked
+    into the returned collection.
+    """
+    coll = bpy.data.collections.get("NoInk")
+    if coll is None:
+        coll = bpy.data.collections.new("NoInk")
+        bpy.context.scene.collection.children.link(coll)
+
+    lineset = bpy.context.scene.view_layers[0].freestyle_settings.linesets[0]
+    lineset.select_by_collection = True
+    lineset.collection = coll
+    # EXCLUSIVE: select edges that are NOT in this collection.
+    lineset.collection_negation = "EXCLUSIVE"
+    return coll
+
+
+def glow_material(name, hex_colour, strength=1.0, alpha=0.35):
+    """
+    A see-through emissive sheet, for light pools and shafts.
+
+    Transparent BSDF mixed with Emission, so the floor's own colour and all
+    its detail still show through the light lying on top of it. An opaque
+    quad would erase whatever it covered.
+    """
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    mat.blend_method = "BLEND" if hasattr(mat, "blend_method") else mat.blend_method
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    emit = nt.nodes.new("ShaderNodeEmission")
+    emit.inputs["Color"].default_value = hex_to_rgba(hex_colour)
+    emit.inputs["Strength"].default_value = strength
+    trans = nt.nodes.new("ShaderNodeBsdfTransparent")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    mix.inputs["Fac"].default_value = alpha
+    nt.links.new(trans.outputs["BSDF"], mix.inputs[1])
+    nt.links.new(emit.outputs["Emission"], mix.inputs[2])
+    nt.links.new(mix.outputs["Shader"], out.inputs["Surface"])
+    return mat
+
+
+def painterly_material(name, base_hex, shadow_mix=0.42, highlight_mix=0.22,
+                       bands=6, grain=0.14, grain_scale=9.0, smooth=True,
+                       warm_hex="BE9E91", cool_hex=None,
+                       joints=0.0, joint_scale=6.0, joint_aspect=1.6,
+                       edge_noise=0.05, edge_scale=9.0):
+    """
+    An environment material: cel-shaded, but mottled and softer than the
+    character shader.
+
+    Two differences from cel_material(), both aimed at stopping large flat
+    surfaces reading as vector art:
+
+    1. GRAIN. The base colour is modulated by a noise texture before any
+       shading, so a floor is not one flat value across 964 px. Kept subtle -
+       the GDD's avoid list bans "busy, high-contrast floor textures where
+       bullets travel", so this is surface interest, not pattern.
+
+    2. SOFTER STEPS. Characters use 3 hard bands, which is what makes them
+       read as inked drawings at 64 px. A wall rendered that way looks like
+       a paint-by-numbers panel. Here the ramp gets more stops and LINEAR
+       interpolation, which keeps the stylisation while letting candlelight
+       actually fall off across a wall.
+
+    `warm_hex` is what the lit band leans toward and `cool_hex` what the
+    shadow band leans toward, and that pairing is doing more work than it
+    looks like.
+
+    The shading chain here is ShaderToRGB -> RGBToBW -> ramp, and RGBToBW
+    DISCARDS THE LIGHT'S COLOUR. So a bright orange candle and a bright blue
+    one produce identical output; warmth can never arrive from the lights
+    themselves. Measured on the first room build, the floor came out with a
+    red-minus-blue of +10 across a scene lit entirely by ember point lights.
+
+    Rather than reconstruct the hue in nodes, the ramp carries it: the lit
+    end leans warm and the shadow end leans cool, so "near a flame" reads
+    amber and "away from one" reads violet. That is the contrast the
+    reference is built on, and as a bonus it is art-directable - the warmth
+    is a colour you choose, not a by-product of light placement.
+    """
+    if cool_hex is None:
+        cool_hex = "18030A"
+    base_srgb = hex_to_srgb(base_hex) if isinstance(base_hex, str) \
+        else tuple(base_hex)
+
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    out.location = (1200, 0)
+
+    # --- mottled base colour -------------------------------------------
+    tex_co = nt.nodes.new("ShaderNodeTexCoord")
+    tex_co.location = (-1200, -300)
+    mapping = nt.nodes.new("ShaderNodeMapping")
+    mapping.location = (-1000, -300)
+    mapping.inputs["Scale"].default_value = (1.0, 1.0, 1.0)
+    nt.links.new(tex_co.outputs["Object"], mapping.inputs["Vector"])
+
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.location = (-820, -300)
+    noise.inputs["Scale"].default_value = grain_scale
+    noise.inputs["Detail"].default_value = 6.0
+    if "Roughness" in noise.inputs:
+        noise.inputs["Roughness"].default_value = 0.6
+    nt.links.new(mapping.outputs["Vector"], noise.inputs["Vector"])
+
+    # Pull the noise toward the middle so it never spikes to pure black/white.
+    nrange = nt.nodes.new("ShaderNodeMapRange")
+    nrange.location = (-640, -300)
+    nrange.inputs["From Min"].default_value = 0.30
+    nrange.inputs["From Max"].default_value = 0.70
+    nrange.inputs["To Min"].default_value = 0.5 - grain
+    nrange.inputs["To Max"].default_value = 0.5 + grain
+    nrange.clamp = True
+    nt.links.new(noise.outputs["Fac"], nrange.inputs["Value"])
+
+    darker = _mix_rgba(base_srgb, hex_to_srgb(cool_hex), 0.22)
+    lighter = _mix_rgba(base_srgb, hex_to_srgb(warm_hex), 0.26)
+
+    base_mix = nt.nodes.new("ShaderNodeMixRGB")
+    base_mix.location = (-440, -200)
+    base_mix.inputs["Color1"].default_value = srgb_to_linear_rgba(darker)
+    base_mix.inputs["Color2"].default_value = srgb_to_linear_rgba(lighter)
+    nt.links.new(nrange.outputs["Result"], base_mix.inputs["Fac"])
+
+    surface_colour = base_mix.outputs["Color"]
+
+    # --- flagstone joints, procedurally -----------------------------------
+    # Drawn into the MATERIAL rather than modelled as geometry, and that is
+    # the whole point. Seam strips modelled as separate objects each pick up
+    # their own Freestyle outline, so a floor ends up covered in bold black
+    # lines and reads as a tile grid - exactly the look the painted-room
+    # approach exists to avoid. A texture has no silhouette, so it cannot be
+    # outlined, and the joints stay as quiet as the reference's.
+    if joints > 0.0:
+        brick = nt.nodes.new("ShaderNodeTexBrick")
+        brick.location = (-640, -560)
+        brick.offset = 0.5
+        brick.squash = 1.0
+        brick.inputs["Scale"].default_value = joint_scale
+        brick.inputs["Mortar Size"].default_value = 0.012
+        brick.inputs["Mortar Smooth"].default_value = 0.35
+        brick.inputs["Bias"].default_value = 0.0
+        brick.inputs["Brick Width"].default_value = joint_aspect
+        brick.inputs["Row Height"].default_value = 1.0
+        brick.inputs["Color1"].default_value = (1, 1, 1, 1)
+        brick.inputs["Color2"].default_value = (1, 1, 1, 1)
+        brick.inputs["Mortar"].default_value = (0, 0, 0, 1)
+        nt.links.new(mapping.outputs["Vector"], brick.inputs["Vector"])
+
+        joint_strength = nt.nodes.new("ShaderNodeMath")
+        joint_strength.location = (-460, -560)
+        joint_strength.operation = "MULTIPLY"
+        joint_strength.inputs[1].default_value = joints
+        nt.links.new(brick.outputs["Fac"], joint_strength.inputs[0])
+
+        joint_mix = nt.nodes.new("ShaderNodeMixRGB")
+        joint_mix.location = (-260, -460)
+        joint_mix.inputs["Color2"].default_value = hex_to_rgba(cool_hex)
+        nt.links.new(base_mix.outputs["Color"], joint_mix.inputs["Color1"])
+        nt.links.new(joint_strength.outputs["Value"], joint_mix.inputs["Fac"])
+        surface_colour = joint_mix.outputs["Color"]
+
+    # --- lighting, banded ------------------------------------------------
+    diffuse = nt.nodes.new("ShaderNodeBsdfDiffuse")
+    diffuse.location = (-700, 240)
+    diffuse.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+
+    to_rgb = nt.nodes.new("ShaderNodeShaderToRGB")
+    to_rgb.location = (-500, 240)
+    nt.links.new(diffuse.outputs["BSDF"], to_rgb.inputs["Shader"])
+
+    lum = nt.nodes.new("ShaderNodeRGBToBW")
+    lum.location = (-320, 240)
+    nt.links.new(to_rgb.outputs["Color"], lum.inputs["Color"])
+
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.location = (-140, 240)
+    ramp.color_ramp.interpolation = "LINEAR" if smooth else "CONSTANT"
+    _build_bands(ramp.color_ramp, bands)
+    lum_socket = lum.outputs["Val"]
+    if edge_noise > 0.0:
+        lum_socket = _break_up_bands(nt, lum_socket, edge_noise, edge_scale)
+    nt.links.new(lum_socket, ramp.inputs["Fac"])
+
+    # --- shade the mottled base ------------------------------------------
+    shadow = nt.nodes.new("ShaderNodeMixRGB")
+    shadow.location = (-120, -120)
+    shadow.inputs["Fac"].default_value = shadow_mix
+    shadow.inputs["Color2"].default_value = hex_to_rgba(cool_hex)
+    nt.links.new(surface_colour, shadow.inputs["Color1"])
+
+    light = nt.nodes.new("ShaderNodeMixRGB")
+    light.location = (-120, -380)
+    light.inputs["Fac"].default_value = highlight_mix
+    light.inputs["Color2"].default_value = hex_to_rgba(warm_hex)
+    nt.links.new(surface_colour, light.inputs["Color1"])
+
+    final = nt.nodes.new("ShaderNodeMixRGB")
+    final.location = (400, 0)
+    nt.links.new(ramp.outputs["Color"], final.inputs["Fac"])
+    nt.links.new(shadow.outputs["Color"], final.inputs["Color1"])
+    nt.links.new(light.outputs["Color"], final.inputs["Color2"])
+
+    emit = nt.nodes.new("ShaderNodeEmission")
+    emit.location = (800, 0)
+    emit.inputs["Strength"].default_value = 1.0
+    nt.links.new(final.outputs["Color"], emit.inputs["Color"])
+    nt.links.new(emit.outputs["Emission"], out.inputs["Surface"])
+    return mat
+
+
+def _build_bands(ramp, bands: int) -> None:
+    """Lay out `bands` evenly spaced hard steps from black to white."""
+    while len(ramp.elements) > 1:
+        ramp.elements.remove(ramp.elements[-1])
+    ramp.elements[0].position = 0.0
+    ramp.elements[0].color = (0.0, 0.0, 0.0, 1.0)
+    for i in range(1, bands):
+        pos = i / float(bands)
+        value = i / float(bands - 1) if bands > 1 else 1.0
+        el = ramp.elements.new(pos)
+        el.color = (value, value, value, 1.0)
+
+
+def _mix_rgba(a, b, factor: float):
+    return tuple(a[i] * (1.0 - factor) + b[i] * factor for i in range(4))
+
+
+def flat_material(name: str, base_hex_or_rgba, strength: float = 1.0):
+    """
+    Unshaded emission. For things that must read as one solid colour at every
+    angle - enemy bullets above all, where the GDD is strict: "Hostile Magenta
+    appears on enemy bullets and nothing else, so bullets always read against
+    the room."
+    """
+    if isinstance(base_hex_or_rgba, str):
+        base = hex_to_rgba(base_hex_or_rgba)
+    else:
+        base = tuple(base_hex_or_rgba)
+        if len(base) == 3:
+            base = base + (1.0,)
+
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    emit = nt.nodes.new("ShaderNodeEmission")
+    emit.inputs["Color"].default_value = base
+    emit.inputs["Strength"].default_value = strength
+    nt.links.new(emit.outputs["Emission"], out.inputs["Surface"])
+    return mat
+
+
+# --------------------------------------------------------------------------
+# Geometry helpers - low-poly primitives, kept blocky on purpose
+# --------------------------------------------------------------------------
+
+def add_box(name, location, size, material=None, rotation=(0, 0, 0)):
+    """
+    A box whose final extent really is `size`, in metres.
+
+    Note the scale factor. `primitive_cube_add(size=1.0)` already produces a
+    cube one unit on a side, spanning -0.5 to +0.5 - NOT the default 2-unit
+    cube. So the scale needed to reach `size` is `size`, not `size / 2`.
+    Using `size / 2` here silently halves every box in the project, which is
+    a quiet bug: the models still render, they just come out wrong, and the
+    parts most affected are the thin ones - arms, legs, seams - which simply
+    stop being visible rather than looking obviously broken.
+    """
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=location)
+    ob = bpy.context.active_object
+    ob.name = name
+    ob.scale = (size[0], size[1], size[2])
+    ob.rotation_euler = rotation
+    if material:
+        ob.data.materials.append(material)
+    _flat_shade(ob)
+    return ob
+
+
+def add_cylinder(name, location, radius, depth, material=None, verts=8,
+                 rotation=(0, 0, 0)):
+    bpy.ops.mesh.primitive_cylinder_add(vertices=verts, radius=radius,
+                                        depth=depth, location=location)
+    ob = bpy.context.active_object
+    ob.name = name
+    ob.rotation_euler = rotation
+    if material:
+        ob.data.materials.append(material)
+    _flat_shade(ob)
+    return ob
+
+
+def add_sphere(name, location, radius, material=None, segments=10, rings=6):
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings,
+                                         radius=radius, location=location)
+    ob = bpy.context.active_object
+    ob.name = name
+    if material:
+        ob.data.materials.append(material)
+    _flat_shade(ob)
+    return ob
+
+
+def add_ring(name, location, radius, thickness, height, material=None,
+             verts=48):
+    """
+    A flat annulus - a ring with a genuine hole, not a disc.
+
+    Floor inlay needs this. Faking a ring by stacking a smaller disc on top
+    of a larger one only works for the outermost ring; any ring inside it
+    gets buried by the disc above.
+    """
+    bpy.ops.mesh.primitive_torus_add(
+        location=location,
+        major_radius=radius,
+        minor_radius=thickness * 0.5,
+        major_segments=verts,
+        minor_segments=4,
+    )
+    ob = bpy.context.active_object
+    ob.name = name
+    # Squash the tube flat so it sits in the floor rather than on it.
+    ob.scale = (1.0, 1.0, height / max(thickness, 1e-6))
+    if material:
+        ob.data.materials.append(material)
+    _flat_shade(ob)
+    return ob
+
+
+def add_cone(name, location, radius1, radius2, depth, material=None, verts=8,
+             rotation=(0, 0, 0)):
+    bpy.ops.mesh.primitive_cone_add(vertices=verts, radius1=radius1,
+                                    radius2=radius2, depth=depth,
+                                    location=location)
+    ob = bpy.context.active_object
+    ob.name = name
+    ob.rotation_euler = rotation
+    if material:
+        ob.data.materials.append(material)
+    _flat_shade(ob)
+    return ob
+
+
+def add_arc(parts, name, centre, radius, start_deg, end_deg, bead_radius,
+            material, segments=10, plane="yz", squash=1.0, taper=1.0,
+            basis=None):
+    """
+    An open arc built from overlapping beads. Appends to `parts`.
+
+    A torus cannot do this: a torus is always a CLOSED ring, so a bow built
+    from one renders as a wheel. An arc also needs to taper, which a torus
+    cannot do either - a tail that keeps its thickness to the tip reads as a
+    tube, not a tail.
+
+    The beads must OVERLAP. Spacing wider than the bead radius renders as a
+    string of separate bubbles rather than one limb, which is exactly how a
+    first attempt at the grotesque's tail came out.
+
+    plane  - "yz" for a vertical arc bulging forward (a bow, a tail)
+             "xz" for a vertical arc bulging sideways
+    basis  - (axis_a, axis_b), two world vectors defining the arc's own
+             plane, overriding `plane`. Needed for ornament on a LEANING
+             wall: such a wall's face lies in no world axis plane, so an
+             arc drawn in "xz" or "yz" cuts through it at an angle and the
+             ornament reads as streaks rather than as scrollwork.
+    squash - flattens the bulge axis; 1.0 is circular
+    taper  - bead radius at the far end, as a fraction of bead_radius
+    """
+    cx, cy, cz = centre
+    for i in range(segments):
+        t = i / float(segments - 1)
+        ang = math.radians(start_deg + (end_deg - start_deg) * t)
+        off = radius * math.sin(ang)
+        bulge = -radius * math.cos(ang) * squash
+        if basis is not None:
+            a_axis, b_axis = basis
+            loc = tuple(centre[k] + a_axis[k] * off + b_axis[k] * bulge
+                        for k in range(3))
+        elif plane == "yz":
+            loc = (cx, cy + bulge, cz + off)
+        else:
+            loc = (cx + bulge, cy, cz + off)
+        r = bead_radius * (1.0 - (1.0 - taper) * t)
+        parts.append(add_sphere(f"{name}{i}", loc, r, material,
+                                segments=8, rings=5))
+
+
+def _flat_shade(ob) -> None:
+    """Low-poly means visible facets. Kill any auto-smoothing."""
+    for poly in ob.data.polygons:
+        poly.use_smooth = False
+
+
+# --------------------------------------------------------------------------
+# Rendering
+# --------------------------------------------------------------------------
+
+def join_parts(parts, name="Merged"):
+    """
+    Join every part into ONE mesh, and return it.
+
+    This matters more than it looks. Freestyle draws a silhouette around each
+    separate OBJECT, so a character assembled from two dozen primitives gets
+    two dozen outlines - one around every box, including the ones buried
+    inside the body. At 64 px those stack into a black mass and the figure
+    stops reading as armour.
+
+    Joined into a single mesh, "silhouette" means the figure's true outer
+    contour, which is what an inked drawing actually has. Interior detail
+    then comes from material boundaries alone, at whatever weight suits.
+
+    World positions are preserved: join() rewrites each object's vertices
+    through the active object's inverse world matrix.
+    """
+    if not parts:
+        raise ValueError("join_parts: nothing to join")
+
+    bpy.ops.object.select_all(action="DESELECT")
+    for ob in parts:
+        ob.select_set(True)
+    bpy.context.view_layer.objects.active = parts[0]
+    bpy.ops.object.join()
+
+    merged = bpy.context.view_layer.objects.active
+    merged.name = name
+    _flat_shade(merged)
+    return merged
+
+
+def group_under_pivot(objects, pivot_name="Pivot"):
+    """
+    Parent everything to one empty at the origin, so a single Z rotation on
+    that empty turns the whole model for the 8-direction sheet.
+    """
+    pivot = bpy.data.objects.new(pivot_name, None)
+    bpy.context.collection.objects.link(pivot)
+    pivot.location = (0.0, 0.0, 0.0)
+    for ob in objects:
+        ob.parent = pivot
+    return pivot
+
+
+def render_sheet(pivot, out_dir, asset_name, directions=None,
+                 start_yaw_deg=0.0):
+    """
+    Render one PNG per direction into out_dir as <asset>_<DIR>.png.
+
+    The anchor direction (index 0, "SE" - facing down-right) is rendered first
+    and also written as <asset>_anchor.png, because the GDD checks every other
+    asset against that frame.
+
+    Blender has no way to write a packed sprite strip itself, so the frames go
+    out one per file and pack.py stitches them. Godot's AnimatedSprite2D is
+    happy with either.
+    """
+    directions = directions or DIRECTIONS
+    os.makedirs(out_dir, exist_ok=True)
+    scene = bpy.context.scene
+
+    written = []
+    for i, name in enumerate(directions):
+        # Model yaw. The camera sits on -Y, so yaw 0 shows the model's -Y face.
+        # Rotating the model counter-clockwise walks through the 8 directions.
+        yaw = start_yaw_deg + (360.0 / len(directions)) * i
+        pivot.rotation_euler = (0.0, 0.0, math.radians(yaw))
+
+        path = os.path.join(out_dir, f"{asset_name}_{name}.png")
+        scene.render.filepath = path
+        bpy.ops.render.render(write_still=True)
+        written.append(path)
+        print(f"[render] {asset_name} {name} -> {path}")
+
+    # The anchor frame, duplicated under a stable name.
+    anchor_src = os.path.join(out_dir, f"{asset_name}_{directions[0]}.png")
+    anchor_dst = os.path.join(out_dir, f"{asset_name}_anchor.png")
+    if os.path.exists(anchor_src):
+        with open(anchor_src, "rb") as fsrc, open(anchor_dst, "wb") as fdst:
+            fdst.write(fsrc.read())
+        print(f"[render] anchor -> {anchor_dst}")
+
+    return written
+
+
+def render_single(out_dir, asset_name):
+    """One frame, no turntable. For bullets, tiles and anything symmetrical."""
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"{asset_name}.png")
+    bpy.context.scene.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+    print(f"[render] {asset_name} -> {path}")
+    return path
+
+
+def repo_root() -> str:
+    """Absolute path to the repo, regardless of where blender was launched."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(here)
+
+
+def sprite_dir(*parts) -> str:
+    return os.path.join(repo_root(), "assets", "sprites", *parts)
