@@ -70,6 +70,10 @@ const PLAYER_BULLET_SCENE: PackedScene = preload("res://scenes/PlayerBullet.tscn
 const HIT_INVULNERABLE_SECONDS: float = 0.4
 var _shot_cooldown: float = 0.0
 var _hit_timer: float = 0.0
+
+## Equipment picked up this run (Items.gd / Loadout.gd - not in the GDD).
+## Built in _ready rather than in Player.tscn, which is generated.
+var loadout: Loadout
 var _anim_t: float = 0.0
 
 # --------------------------------------------------------------------------
@@ -93,6 +97,9 @@ var _current_direction: String = "SE"
 
 
 func _ready() -> void:
+	loadout = Loadout.new()
+	loadout.name = "Loadout"
+	add_child(loadout)
 	_apply_facing(aim_direction)
 	hp_changed.emit(hp, MAX_HP)
 	# Catch any magenta that creeps onto the player. The GDD reserves it for
@@ -109,6 +116,8 @@ func _physics_process(delta: float) -> void:
 	# diagonals, so the GDD's 220 px/s holds in every direction.
 	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	velocity = input * MOVE_SPEED
+	if loadout and loadout.is_dashing():
+		velocity = loadout.dash_velocity()   # Shadow Step
 	move_and_slide()
 
 	# PREVIEW(Daryl): aim at the mouse.
@@ -120,7 +129,8 @@ func _physics_process(delta: float) -> void:
 	# PREVIEW(Daryl): hold to fire at SHOTS_PER_SECOND.
 	_shot_cooldown -= delta
 	if Input.is_action_pressed("shoot") and _shot_cooldown <= 0.0:
-		_shot_cooldown = 1.0 / SHOTS_PER_SECOND
+		var fire_scale: float = loadout.shot_pattern()["fire_scale"] if loadout else 1.0
+		_shot_cooldown = 1.0 / (SHOTS_PER_SECOND * fire_scale)
 		_fire()
 
 	_hit_timer = maxf(0.0, _hit_timer - delta)
@@ -128,16 +138,24 @@ func _physics_process(delta: float) -> void:
 
 
 ## One shot: a PlayerBullet from just ahead of the knight, in Nib Teal.
+## Equipment can make it a fan of several, and change what each one does.
 func _fire() -> void:
-	var bullet := PLAYER_BULLET_SCENE.instantiate()
+	var pattern: Dictionary = loadout.shot_pattern() if loadout else 			{"count": 1, "spread_deg": 0.0, "damage_scale": 1.0}
 	var from := global_position + aim_direction * 18.0 + Vector2(0, -14)
-	bullet.global_position = from
-	bullet.set("direction", aim_direction)
 	# The boost can be read off either the local multiplier or the autoload;
 	# take the larger so it is never counted twice.
 	var mult := maxf(damage_multiplier, CombatRewards.damage_multiplier)
-	bullet.set("damage", int(round(SHOT_DAMAGE * mult)))
-	get_tree().current_scene.add_child(bullet)
+	var dmg := maxi(1, int(round(SHOT_DAMAGE * mult * float(pattern["damage_scale"]))))
+	var count: int = pattern["count"]
+	for i in count:
+		var spread := deg_to_rad(float(pattern["spread_deg"])) * (i - (count - 1) * 0.5)
+		var bullet := PLAYER_BULLET_SCENE.instantiate() as PlayerBullet
+		bullet.global_position = from
+		bullet.direction = aim_direction.rotated(spread)
+		bullet.damage = dmg
+		if loadout:
+			loadout.decorate(bullet)
+		get_tree().current_scene.add_child(bullet)
 	fired_shot.emit(from, aim_direction)
 	# A tiny recoil squash so firing reads even without a muzzle flash.
 	var tween := create_tween()
@@ -224,7 +242,27 @@ func take_damage(amount: int) -> void:
 	if GameManager.instance:
 		GameManager.instance.shake(3.0)
 	if hp == 0:
+		# An extra life (Phoenix Seal) spends itself instead of the run.
+		if loadout and loadout.try_revive():
+			hp = Items.REVIVE_HP
+			hp_changed.emit(hp, MAX_HP)
+			grant_mercy(Items.REVIVE_INVULNERABLE_SECONDS)
+			_flash(Palette.EMBER, 0.5)
+			return
 		died.emit()
+
+
+## A window in which nothing can hurt the knight: the dash, a revive. Uses
+## the same timer as the post-hit mercy window, so traps, blasts and bullets
+## all respect it.
+func grant_mercy(seconds: float) -> void:
+	_hit_timer = maxf(_hit_timer, seconds)
+
+
+## Heal, capped at MAX_HP. The Heart of Ink uses this.
+func heal(amount: int) -> void:
+	hp = mini(hp + amount, MAX_HP)
+	hp_changed.emit(hp, MAX_HP)
 
 
 ## GDD: "Room-clear heal +10 HP, capped at 100 (proposed)".

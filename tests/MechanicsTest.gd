@@ -36,6 +36,8 @@ func _ready() -> void:
 	_gm = GameManager.instance
 	_room = _gm.room
 	_player = _gm.player
+	# The equipment drops are not GDD rules; keep them out of this test.
+	_gm.loot.enabled = false
 	_room.wave_started.connect(_on_wave_started)
 	_room.wave_cleared.connect(func(_i: int) -> void: _wave_cleared_at.append(_clock))
 	_gm.run_won.connect(func() -> void: _won = true)

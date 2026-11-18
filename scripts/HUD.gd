@@ -40,6 +40,20 @@ var boss_bar: ProgressBar
 var boss_label: Label
 var _boss: Enemy
 
+## Equipment (Items.gd - not in the GDD), also built at runtime: extra lives
+## beside the HP bar, a row of what has been picked up under it, the two
+## ability slots bottom-left with their keys and cooldowns, and a banner
+## naming each pickup. All pinned to the edges, like the rest.
+var lives_box: HBoxContainer
+var lives_label: Label
+var item_row: HBoxContainer
+var ability_row: HBoxContainer
+var _ability_slots: Dictionary = {}     # id -> {icon, shade, label}
+var banner: VBoxContainer
+var banner_title: Label
+var banner_blurb: Label
+var _banner_tween: Tween
+
 
 func _ready() -> void:
 	end_screen.visible = false
@@ -72,6 +86,13 @@ func _connect_sources() -> void:
 				meter.meter_full.connect(_on_meter_full)
 				meter.meter_no_longer_full.connect(_on_meter_not_full)
 				set_meter(meter.meter, meter.METER_MAX)
+
+			var loadout: Loadout = gm.player.loadout
+			if loadout:
+				loadout.item_added.connect(_on_item_added)
+				loadout.lives_changed.connect(set_lives)
+				loadout.cooldown_changed.connect(_on_cooldown)
+				set_lives(loadout.extra_lives)
 
 	CombatRewards.boost_started.connect(_on_boost_started)
 	CombatRewards.boost_ended.connect(_on_boost_ended)
@@ -138,6 +159,131 @@ func _build_extras() -> void:
 	boss_box.add_child(boss_label)
 	boss_box.add_child(boss_bar)
 	$Root.add_child(boss_box)
+	_build_equipment()
+
+
+func _build_equipment() -> void:
+	# Extra lives: the Phoenix Seal medallion and a count, beside the HP bar.
+	lives_box = HBoxContainer.new()
+	lives_box.name = "Lives"
+	lives_box.position = Vector2(330, 17)
+	lives_box.add_theme_constant_override("separation", 2)
+	lives_box.visible = false
+	var seal := TextureRect.new()
+	seal.texture = Items.hud_icon("phoenix_seal")
+	seal.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	seal.custom_minimum_size = Vector2(32, 32)
+	seal.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	lives_box.add_child(seal)
+	lives_label = _small_label(16, Palette.EMBER.lerp(Palette.PARCHMENT, 0.4))
+	lives_box.add_child(lives_label)
+	$Root.add_child(lives_box)
+
+	# What has been picked up, a row of small medallions under the bars.
+	item_row = HBoxContainer.new()
+	item_row.name = "ItemRow"
+	item_row.add_theme_constant_override("separation", 3)
+	$Root/TopLeft.add_child(item_row)
+
+	# Ability slots, bottom-left: medallion, key, cooldown shade.
+	ability_row = HBoxContainer.new()
+	ability_row.name = "Abilities"
+	ability_row.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	ability_row.offset_left = 24
+	ability_row.offset_top = -78
+	ability_row.add_theme_constant_override("separation", 10)
+	$Root.add_child(ability_row)
+
+	# The pickup banner, high and centred, clear of the play area's middle.
+	banner = VBoxContainer.new()
+	banner.name = "ItemBanner"
+	banner.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	banner.offset_left = -260
+	banner.offset_right = 260
+	banner.offset_top = 64
+	banner.modulate.a = 0.0
+	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	banner_title = _small_label(22, Palette.PARCHMENT)
+	banner_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	banner_blurb = _small_label(14, Palette.PARCHMENT)
+	banner_blurb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	banner.add_child(banner_title)
+	banner.add_child(banner_blurb)
+	$Root.add_child(banner)
+
+
+func _small_label(size: int, colour: Color) -> Label:
+	var l := Label.new()
+	l.add_theme_color_override("font_color", colour)
+	l.add_theme_color_override("font_outline_color", Palette.INK)
+	l.add_theme_constant_override("outline_size", 4)
+	l.add_theme_font_size_override("font_size", size)
+	return l
+
+
+func set_lives(lives: int) -> void:
+	lives_box.visible = lives > 0
+	lives_label.text = "x%d" % lives
+
+
+func _on_item_added(id: String) -> void:
+	_show_banner(id)
+	match Items.kind(id):
+		Items.Kind.CONSUMABLE, Items.Kind.LIFE:
+			return   # shown by the HP bar and the lives count
+		Items.Kind.ABILITY:
+			if id in ["shadow_step", "blot_bomb"]:
+				_add_ability_slot(id)
+				return
+	var icon := TextureRect.new()
+	icon.texture = Items.hud_icon(id)
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	icon.custom_minimum_size = Vector2(28, 28)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.tooltip_text = "%s - %s" % [Items.display_name(id), Items.info(id).get("blurb", "")]
+	item_row.add_child(icon)
+
+
+func _add_ability_slot(id: String) -> void:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 0)
+	var icon := TextureRect.new()
+	icon.texture = Items.icon(id)
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	icon.custom_minimum_size = Vector2(44, 44)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	box.add_child(icon)
+	var key := _small_label(12, Palette.PARCHMENT)
+	key.text = "SPACE" if id == "shadow_step" else "E"
+	key.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(key)
+	ability_row.add_child(box)
+	_ability_slots[id] = {"icon": icon, "key": key}
+
+
+func _on_cooldown(id: String, remaining: float, _total: float) -> void:
+	var slot: Dictionary = _ability_slots.get(id, {})
+	if slot.is_empty():
+		return
+	var ready := remaining <= 0.0
+	(slot["icon"] as TextureRect).modulate = Color.WHITE if ready else Color(0.45, 0.42, 0.48, 1.0)
+	var key := "SPACE" if id == "shadow_step" else "E"
+	(slot["key"] as Label).text = key if ready else "%.1f" % remaining
+
+
+func _show_banner(id: String) -> void:
+	banner_title.text = Items.display_name(id).to_upper()
+	banner_title.add_theme_color_override("font_color",
+			Items.kind_colour(id).lerp(Palette.PARCHMENT, 0.35))
+	banner_blurb.text = str(Items.info(id).get("blurb", ""))
+	if _banner_tween:
+		_banner_tween.kill()
+	banner.modulate.a = 1.0
+	_banner_tween = create_tween()
+	_banner_tween.tween_interval(2.2)
+	_banner_tween.tween_property(banner, "modulate:a", 0.0, 0.5)
 
 
 func set_wave(index: int, count: int) -> void:

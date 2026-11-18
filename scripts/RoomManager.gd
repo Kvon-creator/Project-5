@@ -82,6 +82,8 @@ signal doors_unlocked
 signal door_crossed(door_name: String)
 ## The boss has been placed; the HUD puts up its bar.
 signal boss_spawned(boss: Enemy)
+## Any enemy has been placed (LootDrops listens for its death).
+signal enemy_spawned(enemy: Enemy)
 
 # --------------------------------------------------------------------------
 # State
@@ -408,6 +410,7 @@ func _spawn_enemy(species: String, at: Vector2) -> void:
 	e.died.connect(_on_enemy_died)
 	enemies.add_child(e)
 	enemies_alive += 1
+	enemy_spawned.emit(e)
 	if species == BOSS_SPECIES:
 		boss_spawned.emit(e)
 

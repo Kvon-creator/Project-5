@@ -8,6 +8,50 @@ Read this before you start on your mechanic.
 
 ---
 
+## Update, 17 Nov: equipment and power-up drops (not in the GDD)
+
+Fourteen drops on top of the GDD's six mechanics: extra lives, a heal, four
+abilities and eight changes to the knight's shots. The README has the table.
+The GDD's own drop (Jarman's damage shell, every 5th kill) is untouched.
+
+**Who reads what.** New scripts, none of which change a GDD number:
+
+| Script | Holds | Read by |
+|---|---|---|
+| `Items.gd` | the catalogue and every proposed number | everything below |
+| `Loadout.gd` | what the knight owns this run, lives, ability cooldowns; runs the dash and bomb | Player, HUD, ItemPickup, LootDrops |
+| `LootDrops.gd` | when drops appear (room clear, elite, heart) | made by GameManager |
+| `ItemPickup.gd` | one item on the floor | |
+| `WardPage.gd`, `Familiar.gd`, `InkBomb.gd`, `BurnEffect.gd` | one ability or effect each | |
+
+**Touches to owned scripts**, all small and marked in their comments:
+
+- `Player.gd` (Daryl): builds the Loadout in `_ready`; `_fire` asks it for
+  the shot pattern and to decorate each bullet; movement uses the dash
+  velocity while dashing; `take_damage` spends a life before emitting
+  `died`; new `grant_mercy()` and `heal()`. With nothing picked up, it
+  plays exactly as before.
+- `PlayerBullet.gd` (Daryl): optional pierce, homing, bounces, burn, chain,
+  knockback and size. All off by default.
+- `HUD.gd` (Daryl): lives, item row, ability slots and pickup banner, built
+  at runtime like the boss bar.
+- `RoomManager.gd`: an `enemy_spawned` signal. `GameManager.gd`: makes
+  LootDrops. `project.godot`: `dash` (Space) and `ability` (E).
+
+**Cross-links with the GDD mechanics.** A Blot Bomb sets off barrels like
+the Shockwave does, and the barrel's kills still pay double. Burn, chain
+and familiar kills are "player" kills, so they pay normal energy. Dash and
+revive mercy use the same timer as the post-hit window, so traps, blasts
+and bullets all respect it.
+
+**Art.** Icons are game-icons.net SVGs (CC BY 3.0, `CREDITS.md`), stored
+unmodified in `docs/reference/items/`. `pipeline/item_icons.py` has Godot
+rasterise them (`pipeline/rasterize_svg.gd`) and paints each into a
+medallion whose shape gives the kind: round for lives and heals, diamond
+for abilities, hexagon for attack changes.
+
+`tests/ItemsTest.tscn` checks every item (51 checks).
+
 ## Update, 13 Nov: K'von's mechanics, per the GDD (branch `kvon-mechanics`)
 
 The `PREVIEW(K'von)` fills in `EnvObject.gd`, `RoomManager.gd` and

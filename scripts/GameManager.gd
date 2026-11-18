@@ -47,6 +47,9 @@ func shake(amount: float) -> void:
 @onready var hud: CanvasLayer = $HUD
 @onready var camera: Camera2D = $Player/Camera
 
+## Equipment and heart drops (not in the GDD; see Items.gd).
+var loot: LootDrops
+
 
 func _ready() -> void:
 	instance = self
@@ -60,6 +63,10 @@ func _ready() -> void:
 	if room:
 		room.room_cleared.connect(_on_room_cleared)
 		room.door_crossed.connect(_advance_room)
+	loot = LootDrops.new()
+	loot.name = "LootDrops"
+	add_child(loot)
+	loot.setup(room, player)
 
 	start_run()
 

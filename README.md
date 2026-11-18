@@ -38,7 +38,38 @@ Open `project.godot` in **Godot 4.4 or newer** (tested on 4.7.2).
 
 WASD to move, mouse to aim, hold left-click to fire, Q for the Shockwave
 once the graze meter is full. Clear the waves, walk up to a door, repeat;
-room 7 is the Elite Court, room 8 is the Ink Scribe.
+room 7 is the Elite Court, room 8 is the Ink Scribe. SPACE dashes and E
+throws a bomb once you have found those abilities.
+
+**Items** *(not in the GDD; every number in `scripts/Items.gd` is proposed)*.
+Each cleared room offers two items; walk over one and the other crumbles.
+Elites drop one 30% of the time, and standard enemies drop a heart 5% of
+the time while you are hurt. The GDD's damage shell every 5th kill is
+unchanged and comes on top.
+
+| Item | Kind | Effect |
+|---|---|---|
+| Phoenix Seal | life | +1 life (max 3): falling revives you at 50 HP, clears nearby shots |
+| Heart of Ink | heal | +25 HP |
+| Shadow Step | ability | SPACE: 150 px dash, untouchable mid-step, 0.9 s cooldown |
+| Blot Bomb | ability | E: ink bomb at the cursor, 35 damage in 90 px, sets off barrels, 7 s cooldown |
+| Warding Pages | ability | two orbiting pages eat enemy shots, then rest 1.2 s |
+| Inkling | ability | an imp familiar that shoots the nearest foe (5 damage) |
+| Split Nib | attack | three shots in a 24 degree fan, 5 damage each |
+| Bodkin Nib | attack | shots pierce two foes |
+| Seeking Ink | attack | shots home in |
+| Mirror Ink | attack | shots bounce off walls twice |
+| Ember Ink | attack | hits burn for 4 x 3 damage |
+| Storm Quill | attack | hits arc to a foe within 140 px for half damage |
+| Quickened Hand | attack | +35% fire rate |
+| Leaden Nib | attack | +50% damage and knockback, -20% fire rate |
+
+The mechanics come from the genre: Isaac's tear effects, Gungeon's dodge
+roll and extra lives, Hades' chain lightning and dash. The icons are
+game-icons.net glyphs (CC BY 3.0, see [`CREDITS.md`](CREDITS.md)), set
+into painted medallions by `pipeline/item_icons.py`. The medallion's shape
+tells you the kind of item: a round seal is a life or heal, a diamond is an
+ability, a hexagon changes your shots.
 
 **The boss.** 1,200 HP, three phases by health:
 
@@ -57,6 +88,7 @@ Before pushing, run the checks that were run on every commit of this preview:
 python3 pipeline/check_gdscript.py                 # static GDScript check
 godot --headless --path . --quit-after 150         # must print no errors
 godot --headless --path . res://tests/MechanicsTest.tscn   # GDD rule checks
+godot --headless --path . res://tests/ItemsTest.tscn       # item checks
 godot --path . res://tests/Screenshot.tscn         # saves build/shots/*.png
 ```
 
