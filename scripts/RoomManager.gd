@@ -18,7 +18,8 @@ extends Node2D
 ## WHAT IS BUILT: everything in GDD section 2.
 ##   Run shape  - 8 rooms: 1-6 combat, 7 elite, 8 boss. Rooms 1-6 draw a
 ##                layout from the pool with no repeats.
-##   Doors      - lock on entry, unlock when the last wave is down; walking
+##   Doors      - lock on entry, unlock when the last wave is down, and the
+##                room swaps to its open-door painting; walking
 ##                into an open door emits `door_crossed` and GameManager
 ##                starts the next room.
 ##   Waves      - the GDD table (2 or 3 waves, 4-6 standard, an elite per
@@ -176,6 +177,11 @@ var _door_pulse: float = 0.0
 ## GameManager.
 var entry_point: Vector2 = Vector2.ZERO
 
+## The current layout painted with its doors shut, and with them standing
+## open (null when the layout has no open-door painting).
+var _closed_texture: Texture2D
+var _open_texture: Texture2D
+
 
 func _ready() -> void:
 	Palette.check_no_magenta(self)
@@ -197,7 +203,9 @@ func load_layout(index: int, mark_used: bool = true) -> void:
 	if tex == null:
 		return
 	layout_index = index
-	background.texture = tex
+	_closed_texture = tex
+	_open_texture = RoomLayouts.open_texture_for(index)
+	_refresh_background()
 	var g := RoomLayouts.geometry_for(index)
 	_apply_geometry(g)
 	# GDD: "objects placed on 3-6 spawn markers per layout".
@@ -699,6 +707,7 @@ func _obstacle_half_size(e: EnvObject) -> Vector2:
 ## than assigning doors_locked, so the two never disagree.
 func lock_and_show(locked: bool) -> void:
 	doors_locked = locked
+	_refresh_background()
 	_refresh_door_visuals()
 	if not locked:
 		doors_unlocked.emit()
@@ -782,10 +791,22 @@ func entry_point_opposite(door_name: String) -> Vector2:
 	return c
 
 
-## Each door anchor carries a "Seal": a strip of light across the threshold.
-## Locked, it is Blood Rust with a crossed bar; open, it is Bone and pulses.
-## The archways themselves are painted into the room background, so this is
-## the only part of a door that changes.
+## The doors are painted into the room, so opening them is a change of
+## painting: shut while the fight is on, standing open once the last wave is
+## down. A layout with no open-door painting keeps its one image.
+func _refresh_background() -> void:
+	if not is_instance_valid(background):
+		return
+	var tex := _closed_texture
+	if not doors_locked and _open_texture != null:
+		tex = _open_texture
+	if tex != null:
+		background.texture = tex
+
+
+## Each door anchor also carries a "Seal": a strip of light across the
+## threshold. Locked, it is Blood Rust with a crossed bar; open, it is Bone
+## and pulses, marking where to walk.
 func _refresh_door_visuals() -> void:
 	if not is_instance_valid(doors):
 		return

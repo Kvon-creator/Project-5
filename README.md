@@ -67,6 +67,25 @@ and Room-Based Combat; it exits non-zero if any rule fails.
 The last one opens a window for a few seconds, drives the knight with fake
 input, and saves frames you can hold up against `docs/reference/`.
 
+## Playing it in a browser (GitHub Pages)
+
+`docs/index.html` is a web build of the game. With GitHub Pages set to serve
+the `/docs` folder of a branch (repo Settings -> Pages -> Deploy from a
+branch), the game is playable at `https://kvon-creator.github.io/Project-5/`.
+
+The build is a snapshot: rebuild it after changing the game, then commit the
+`docs/index.*` files.
+
+```bash
+godot --headless --path . --export-release "Web" docs/index.html
+```
+
+That needs Godot's export templates installed and an `export_presets.cfg`
+with a preset named `Web` (not in the repo, per `.gitignore`): threads off,
+because GitHub Pages cannot send the headers a threaded build needs;
+`*.json` in the include filter, because the room manifest is read as a plain
+file; and `docs/*, build/*, pipeline/*, tests/*` excluded.
+
 ## Re-rendering the art
 
 All art is generated from Blender scripts, so it can be re-rendered from

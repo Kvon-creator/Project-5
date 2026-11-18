@@ -94,6 +94,7 @@
     {
       "name": "room_02",
       "image": "room_02.png",
+      "image_open": "room_02_open.png",
       "source": "docs/reference/room-painted-interior.png via pipeline/cutout_refs.py",
       "note": "Painted reference. Its floor is a trapezoid, so it overrides the shared framing. Anything not listed here falls back to `framing`.",
       "floor_polygon": [
@@ -190,6 +191,7 @@
     {
       "name": "room_04",
       "image": "room_04.png",
+      "image_open": "room_04_open.png",
       "title": "Night Scriptorium",
       "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
       "note": "Centre block of tomes: fight around it.",
@@ -303,6 +305,7 @@
     {
       "name": "room_05",
       "image": "room_05.png",
+      "image_open": "room_05_open.png",
       "title": "Mirrored Hall",
       "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
       "note": "Two tome walls make three lanes.",
@@ -440,6 +443,7 @@
     {
       "name": "room_06",
       "image": "room_06.png",
+      "image_open": "room_06_open.png",
       "title": "Mossy Archive",
       "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
       "note": "Four pillars: cover everywhere, lines of sight nowhere.",
@@ -553,6 +557,7 @@
     {
       "name": "room_07",
       "image": "room_07.png",
+      "image_open": "room_07_open.png",
       "title": "Ink-Flooded Stacks",
       "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
       "note": "A diagonal of tomes splits the room corner to corner.",
@@ -666,6 +671,7 @@
     {
       "name": "room_08",
       "image": "room_08.png",
+      "image_open": "room_08_open.png",
       "title": "Candlelit Nave",
       "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
       "note": "A horseshoe at the back wall: enemies spawn inside it.",
@@ -949,6 +955,7 @@
     {
       "name": "room_10",
       "image": "room_10.png",
+      "image_open": "room_10_open.png",
       "title": "Dusk Scriptorium",
       "source": "room-painted-interior.png, graded in pipeline/cutout_refs.py",
       "note": "Open floor, dim light. The plainest of the painted rooms.",
@@ -1045,6 +1052,17 @@
     {
       "name": "room_01",
       "image": "room_01.png",
+      "image_open": "room_01_open.png",
+      "doors": {
+        "north": [
+          381,
+          131.7
+        ],
+        "north2": [
+          771,
+          131.7
+        ]
+      },
       "source": "blender",
       "standin": true,
       "note": "Blender stand-in on the shared framing. Drawn only once every painted room has been used.",

@@ -64,6 +64,18 @@ ROOM_JOBS = [
     ("room_10", "room-painted-interior.png", (1152, 640), {"mul": (0.80, 0.88, 1.05), "gamma": 1.25}),   # dusk
 ]
 
+# The same rooms with their doors standing open, shown once the last wave is
+# down. Rooms 01, 02 and 04 were painted; the other painted-interior variants
+# get the grade (and mirror) their closed image got, so the two states of a
+# room differ only at the doors. The boss arena and the elite court have no
+# painted doors and so no open image.
+ROOM_OPEN_SOURCES = {
+    "room_01": "room-01-open.jpg",
+    "room_02": "room-painted-interior-open.jpg",
+    "room_04": "room-04-open.jpg",          # painted at night already: no grade
+}
+ROOM_OPEN_DEFAULT = "room-painted-interior-open.jpg"
+
 
 def background_mask(rgb, kind):
     """Boolean mask of pixels that look like the background."""
@@ -294,6 +306,30 @@ def rooms():
         print(f"  {name:10s} {im.width} x {im.height} <- {src} {ops if ops else ''}")
 
 
+def open_rooms():
+    """Write room_NN_open.png beside each room that has painted doors."""
+    jobs = [("room_01", None, (1152, 640), {})] + list(ROOM_JOBS)
+    for name, src, size, ops in jobs:
+        if src is not None and not src.startswith("room-painted-interior"):
+            continue                        # the arena rooms: no doors to open
+        open_src = ROOM_OPEN_SOURCES.get(name, ROOM_OPEN_DEFAULT)
+        im = Image.open(os.path.join(REF, open_src)).convert("RGB").resize(size, Image.LANCZOS)
+        if name not in ROOM_OPEN_SOURCES:
+            im = grade(im, ops)
+        rooms_dir = os.path.join(ROOT, "assets", "sprites", "rooms")
+        # Nudge each channel to the closed image's average, so the swap in
+        # game changes the doors and not the light.
+        closed = os.path.join(rooms_dir, name + ".png")
+        if os.path.exists(closed):
+            want = np.asarray(Image.open(closed).convert("RGB")).reshape(-1, 3).mean(axis=0)
+            arr = np.asarray(im).astype(np.float32)
+            arr *= want / np.maximum(arr.reshape(-1, 3).mean(axis=0), 1.0)
+            im = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
+        path = os.path.join(rooms_dir, name + "_open.png")
+        im.save(path)
+        print(f"  {name}_open {im.width} x {im.height} <- {open_src}")
+
+
 def contact_sheet(images):
     """All cut-outs on a stone-coloured card, at game scale, for eyeballing."""
     pad = 16
@@ -319,6 +355,8 @@ def main():
     made = [cut(*job) for job in JOBS]
     print("rooms:")
     rooms()
+    print("rooms, doors open:")
+    open_rooms()
     if args.sheet:
         contact_sheet(made)
 

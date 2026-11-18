@@ -69,10 +69,26 @@ static func geometry_for(index: int) -> Dictionary:
 
 ## The background texture for one layout, or null if it will not load.
 static func texture_for(index: int) -> Texture2D:
+	return _texture(index, "image", true)
+
+
+## The same room painted with its doors standing open (`image_open` in the
+## manifest), or null for a room that has no such painting - the boss arena
+## and the elite court, whose art has no doors.
+static func open_texture_for(index: int) -> Texture2D:
+	return _texture(index, "image_open", false)
+
+
+static func _texture(index: int, key: String, required: bool) -> Texture2D:
 	var rooms := all()
 	if index < 0 or index >= rooms.size():
 		return null
-	var path: String = ROOMS_DIR + str(rooms[index].get("image", ""))
+	var file := str(rooms[index].get(key, ""))
+	if file == "":
+		if required:
+			push_warning("RoomLayouts: layout %d has no %s" % [index, key])
+		return null
+	var path: String = ROOMS_DIR + file
 	if not ResourceLoader.exists(path):
 		push_warning("RoomLayouts: missing image %s" % path)
 		return null

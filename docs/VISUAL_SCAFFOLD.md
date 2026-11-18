@@ -39,6 +39,16 @@ checks each one against the GDD number.
   Rust and barred while locked, pulsing Bone once the last wave is down.
   Walking *into* an open door emits `door_crossed`, and GameManager starts
   the next room; standing next to one does nothing.
+- **Open-door paintings.** Each room with painted doors has a second
+  image, `room_NN_open.png` (`image_open` in `layouts.json`), and
+  `RoomManager` swaps the background to it when the doors unlock. Rooms 01,
+  02 and 04 are K'von's paintings (sources in `docs/reference/*-open.jpg`);
+  05-08 and 10 are the room 02 painting put through the same grade and
+  mirror as their closed image, by `open_rooms()` in
+  `pipeline/cutout_refs.py`. The boss arena and the elite court have no
+  painted doors, so they keep one image and rely on the seals. Room 01 now
+  has its own two north doors where the painting has them; its side
+  shutters stay shut in the open painting, so they are no longer exits.
 - **The elite court had no doors**, so a run could not get from room 7 to
   the boss. `room_09` now has north, west and east doors in `layouts.json`.
 - **Spawn distance.** Every enemy spawns at least 200 px from the player,

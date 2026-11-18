@@ -111,6 +111,7 @@ func _static_layout_checks() -> void:
 	var door_ok := true
 	var entry_ok := true
 	var spawn_ok := true
+	var art_ok := true
 	var notes: Array[String] = []
 	for i in RoomLayouts.count():
 		var entry := RoomLayouts.entry(i)
@@ -125,6 +126,10 @@ func _static_layout_checks() -> void:
 		if usable < 3 or usable > 6:
 			marker_ok = false
 			notes.append("%s has %d usable object markers" % [layout_name, usable])
+		# a room with painted doors has a painting of them open
+		if not entry.get("boss", false) and not entry.get("elite", false) 				and RoomLayouts.open_texture_for(i) == null:
+			art_ok = false
+			notes.append("%s has no open-door image" % layout_name)
 		if entry.get("boss", false):
 			continue   # the boss arena has no way out; the run ends there
 		if _room.doors.get_child_count() == 0:
@@ -151,6 +156,7 @@ func _static_layout_checks() -> void:
 	_check("every layout offers 3-6 object markers", marker_ok, "; ".join(notes))
 	_check("every combat layout has doors the player can reach", door_ok, "; ".join(notes))
 	_check("every entry point is clear floor", entry_ok, "; ".join(notes))
+	_check("every room with painted doors has an open-door image", art_ok, "; ".join(notes))
 	_check("a 7-enemy wave fits 200 px from every entry point", spawn_ok, "; ".join(notes))
 
 
@@ -192,6 +198,7 @@ func _full_run() -> void:
 	var lock_ok := true
 	var heal_ok := true
 	var delay_ok := true
+	var art_ok := true
 	var delay_note := ""
 
 	for room_number in range(1, 9):
@@ -205,6 +212,8 @@ func _full_run() -> void:
 			objects_ok = false
 		if not _room.doors_locked:
 			lock_ok = false          # "Doors: Lock on entry"
+		if _room.background.texture != RoomLayouts.texture_for(_room.layout_index):
+			art_ok = false           # doors painted shut while the fight is on
 
 		if room_number == 1:
 			await _locked_door_check()
@@ -240,6 +249,13 @@ func _full_run() -> void:
 				lock_ok = false
 			if _player.hp != 60:
 				heal_ok = false
+			# the doors are painted open now, where the layout has that art
+			var open_tex := RoomLayouts.open_texture_for(_room.layout_index)
+			var want := open_tex if open_tex != null else RoomLayouts.texture_for(_room.layout_index)
+			if _room.background.texture != want:
+				art_ok = false
+			if room_number <= 6 and open_tex == null:
+				art_ok = false
 
 		if room_number == 2:
 			await _environment_checks()
@@ -251,6 +267,7 @@ func _full_run() -> void:
 	_check("next wave 1.5 s after the last one is cleared", delay_ok, delay_note)
 	_check("doors lock on entry and unlock when the last wave is down", lock_ok)
 	_check("room clear heals +10 HP", heal_ok)
+	_check("rooms show doors shut while locked and standing open once cleared", art_ok)
 	_check("1-3 interactive objects in every room", objects_ok)
 	var unique := {}
 	for i in layouts_seen:
@@ -370,7 +387,8 @@ func _environment_checks() -> void:
 	# distance below means the same thing on every run.
 	for i in RoomLayouts.count():
 		var e := RoomLayouts.entry(i)
-		if (e.get("fixtures", []) as Array).is_empty() and not e.get("boss", false) 				and not e.get("standin", false):
+		if (e.get("fixtures", []) as Array).is_empty() and not e.get("boss", false) \
+				and not e.get("standin", false):
 			_room.load_layout(i, false)
 			break
 	var c := _room._nearest_open_point(_room.floor_centre())
@@ -407,6 +425,10 @@ func _environment_checks() -> void:
 	_clear_stage()
 	var b1 := _spawn_object(0, c)
 	var b2 := _spawn_object(0, c + Vector2(80, 0))
+	# Recorded by signal: a spent barrel frees itself 0.3 s later, and a slow
+	# frame can run that many physics steps at once.
+	var b2_went := [false]
+	b2.detonated.connect(func(_at: Vector2, _r: float) -> void: b2_went[0] = true)
 	var chained := _spawn_dummy("snail", c + Vector2(160, 0))   # only b2 reaches it
 	_player.global_position = c + Vector2(0, 50)
 	await _frames(2)
@@ -414,7 +436,7 @@ func _environment_checks() -> void:
 	b1.take_hit("player")
 	b1.take_hit("player")
 	await _frames(3)
-	_check("a blast sets off other barrels in range", b2.is_spent() and chained.hp == 10, "hp %d" % chained.hp)
+	_check("a blast sets off other barrels in range", b2_went[0] and chained.hp == 10, "hp %d" % chained.hp)
 	_check("standing in a blast costs the player 30", _player.hp == hp_before - 30, "hp %d" % _player.hp)
 	await _seconds(0.5)
 
