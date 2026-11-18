@@ -94,6 +94,11 @@ func _connect_sources() -> void:
 				loadout.lives_changed.connect(set_lives)
 				loadout.cooldown_changed.connect(_on_cooldown)
 				set_lives(loadout.extra_lives)
+			var dodge: Dodge = gm.player.dodge
+			if dodge:
+				_add_ability_slot("dodge")
+				dodge.cooldown_changed.connect(
+						func(r: float, t: float) -> void: _on_cooldown("dodge", r, t))
 
 	CombatRewards.boost_started.connect(_on_boost_started)
 	CombatRewards.boost_ended.connect(_on_boost_ended)
@@ -233,7 +238,7 @@ func _on_item_added(id: String) -> void:
 		Items.Kind.CONSUMABLE, Items.Kind.LIFE:
 			return   # shown by the HP bar and the lives count
 		Items.Kind.ABILITY:
-			if id in ["shadow_step", "blot_bomb"]:
+			if id == "blot_bomb":
 				_add_ability_slot(id)
 				return
 	var icon := TextureRect.new()
@@ -250,14 +255,15 @@ func _add_ability_slot(id: String) -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 0)
 	var icon := TextureRect.new()
-	icon.texture = Items.icon(id)
+	# The dodge wears the Shadow Step medallion: that item is its upgrade.
+	icon.texture = Items.icon("shadow_step" if id == "dodge" else id)
 	icon.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	icon.custom_minimum_size = Vector2(44, 44)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	box.add_child(icon)
 	var key := _small_label(12, Palette.PARCHMENT)
-	key.text = "SPACE" if id == "shadow_step" else "E"
+	key.text = "SPACE" if id == "dodge" else "E"
 	key.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(key)
 	ability_row.add_child(box)
@@ -270,7 +276,7 @@ func _on_cooldown(id: String, remaining: float, _total: float) -> void:
 		return
 	var ready := remaining <= 0.0
 	(slot["icon"] as TextureRect).modulate = Color.WHITE if ready else Color(0.45, 0.42, 0.48, 1.0)
-	var key := "SPACE" if id == "shadow_step" else "E"
+	var key := "SPACE" if id == "dodge" else "E"
 	(slot["key"] as Label).text = key if ready else "%.1f" % remaining
 
 

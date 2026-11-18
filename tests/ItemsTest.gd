@@ -327,24 +327,19 @@ func _attacks() -> void:
 # --------------------------------------------------------------------------
 
 func _abilities() -> void:
-	# dash
+	# Shadow Step upgrades the dodge (tests/DodgeTest checks the dodge itself)
 	await _reset()
-	_check("Shadow Step does nothing until picked up", not _player.loadout.try_dash())
+	_check("Shadow Step: the dodge starts un-upgraded", not _player.dodge.upgraded())
 	_player.loadout.add_item("shadow_step")
-	var start := _player.global_position
-	_check("Shadow Step: SPACE dashes", _player.loadout.try_dash())
-	_player.take_damage(10)
-	_check("mid-dash, nothing hurts", _player.hp == 100)
-	await _seconds(Items.DASH_SECONDS + 0.05)
-	var moved := _player.global_position.distance_to(start)
-	_check("the dash covers about 150 px", absf(moved - Items.DASH_DISTANCE_PX) < 20.0, "%.0f px" % moved)
-	_check("and has a cooldown", not _player.loadout.try_dash())
-	await _seconds(Items.DASH_COOLDOWN_SECONDS)
-	_check("ready again after %.1f s" % Items.DASH_COOLDOWN_SECONDS, _player.loadout.try_dash())
+	_check("picking it up upgrades the dodge", _player.dodge.upgraded()
+			and _player.dodge.cooldown_total() == Items.SHADOW_STEP_COOLDOWN)
 
-	# warding pages
+	# warding pages. The pages orbit inside the knight's own hitbox (his
+	# whole sprite), so it is switched off here to watch the pages alone.
 	await _reset()
 	_player.loadout.add_item("warding_pages")
+	var own_hitbox := _player.get_node("SpriteHitbox") as Area2D
+	own_hitbox.monitorable = false
 	await _frames(4)
 	var pages: Array[Node2D] = []
 	for w in _player.loadout.get_children():
@@ -366,6 +361,7 @@ func _abilities() -> void:
 		through.queue_free()
 	await _seconds(Items.WARD_RECHARGE_SECONDS + 0.1)
 	_check("and is back after %.1f s" % Items.WARD_RECHARGE_SECONDS, pages[0].modulate.a == 1.0)
+	own_hitbox.monitorable = true
 
 	# inkling
 	await _reset()

@@ -52,9 +52,10 @@ func _test_real_scene_grazing() -> void:
 	graze_area.area_entered.connect(_record_integration_entry)
 	graze_area.area_exited.connect(_record_integration_exit)
 
-	# The combined hit radii are 13 px and the graze threshold is another
-	# 20 px. A 25 px offset therefore misses the hitbox but crosses the graze
-	# band. The real EnemyBullet script supplies all movement.
+	# The knight's hitbox is the rectangle around his sprite, which ends 6 px
+	# below his feet; the graze band is another 20 px. A bullet 25 px below
+	# his feet therefore misses the hitbox but crosses the graze band. The
+	# real EnemyBullet script supplies all movement.
 	var near_miss := ENEMY_BULLET_SCENE.instantiate() as EnemyBullet
 	near_miss.position = Vector2(300, 325)
 	near_miss.direction = Vector2.RIGHT

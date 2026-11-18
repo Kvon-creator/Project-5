@@ -74,6 +74,15 @@ var _hit_timer: float = 0.0
 ## Equipment picked up this run (Items.gd / Loadout.gd - not in the GDD).
 ## Built in _ready rather than in Player.tscn, which is generated.
 var loadout: Loadout
+## The dodge on SPACE (Dodge.gd - not in the GDD). Also built in _ready.
+var dodge: Dodge
+
+## The part of each knight texture that can be hit, in texels. The painted
+## reference holds his staff out to the right; the staff starts at his hand,
+## x = 68, and is not part of him.
+const HITBOX_BODY_TEXELS := {
+	"res://assets/sprites/refs/hero.png": Rect2(0, 0, 68, 84),
+}
 var _anim_t: float = 0.0
 
 # --------------------------------------------------------------------------
@@ -100,6 +109,15 @@ func _ready() -> void:
 	loadout = Loadout.new()
 	loadout.name = "Loadout"
 	add_child(loadout)
+	dodge = Dodge.new()
+	dodge.name = "Dodge"
+	add_child(dodge)
+	# Bullets hit a rectangle around the knight's sprite, minus his staff;
+	# $Hitbox stays the small circle at his feet that walks into walls and
+	# onto traps. The GrazeArea becomes that rectangle plus the GDD's 20 px
+	# graze band.
+	SpriteHitbox.attach(self, sprite, SpriteHitbox.PLAYER_LAYER,
+			graze_area, GrazeMeter.GRAZE_DISTANCE_PX, HITBOX_BODY_TEXELS)
 	_apply_facing(aim_direction)
 	hp_changed.emit(hp, MAX_HP)
 	# Catch any magenta that creeps onto the player. The GDD reserves it for
@@ -116,8 +134,8 @@ func _physics_process(delta: float) -> void:
 	# diagonals, so the GDD's 220 px/s holds in every direction.
 	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	velocity = input * MOVE_SPEED
-	if loadout and loadout.is_dashing():
-		velocity = loadout.dash_velocity()   # Shadow Step
+	if dodge and dodge.is_dodging():
+		velocity = dodge.velocity()
 	move_and_slide()
 
 	# PREVIEW(Daryl): aim at the mouse.
@@ -227,7 +245,7 @@ func _single_view_sprites() -> bool:
 ## Taking damage also costs the Graze Meter 25 points, which GrazeMeter.gd
 ## handles by listening to took_damage.
 func take_damage(amount: int) -> void:
-	if is_invulnerable or is_dead or _hit_timer > 0.0:
+	if is_invulnerable or is_dead or _hit_timer > 0.0 or is_phasing():
 		return
 
 	# Built: the damage flash, in Blood Rust per the GDD palette table
@@ -252,7 +270,13 @@ func take_damage(amount: int) -> void:
 		died.emit()
 
 
-## A window in which nothing can hurt the knight: the dash, a revive. Uses
+## True during a dodge's i-frames. Nothing hurts him, and enemy bullets pass
+## through him instead of breaking on him - so they can still be grazed.
+func is_phasing() -> bool:
+	return dodge != null and dodge.is_invulnerable()
+
+
+## A window in which nothing can hurt the knight: a revive. Uses
 ## the same timer as the post-hit mercy window, so traps, blasts and bullets
 ## all respect it.
 func grant_mercy(seconds: float) -> void:

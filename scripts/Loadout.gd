@@ -10,7 +10,8 @@ extends Node2D
 ##   shot_pattern()  how many bullets, their spread, damage and fire rate
 ##   decorate(b)     give one PlayerBullet its properties (pierce, homing...)
 ##   try_revive()    spend a life instead of dying
-## Abilities (dash, bomb, pages, inkling) run here.
+## Abilities (bomb, pages, inkling) run here. The dodge is Dodge.gd; the
+## Shadow Step item only upgrades it.
 
 signal item_added(id: String)
 signal lives_changed(lives: int)
@@ -25,11 +26,7 @@ const BOMB_SCRIPT := preload("res://scripts/InkBomb.gd")
 var owned: Array[String] = []
 var extra_lives: int = 0
 
-var _dash_cd: float = 0.0
 var _bomb_cd: float = 0.0
-var _dash_time: float = 0.0
-var _dash_dir: Vector2 = Vector2.ZERO
-var _afterimage_t: float = 0.0
 var _wards: Array[Node2D] = []
 var _ward_angle: float = 0.0
 
@@ -61,8 +58,6 @@ func add_item(id: String) -> void:
 			_spawn_wards()
 		"inkling":
 			_spawn_familiar()
-		"shadow_step":
-			cooldown_changed.emit(id, 0.0, Items.DASH_COOLDOWN_SECONDS)
 		"blot_bomb":
 			cooldown_changed.emit(id, 0.0, Items.BOMB_COOLDOWN_SECONDS)
 	item_added.emit(id)
@@ -136,33 +131,8 @@ func try_revive() -> bool:
 func _unhandled_input(event: InputEvent) -> void:
 	if player == null or player.is_dead:
 		return
-	if event.is_action_pressed("dash"):
-		try_dash()
-	elif event.is_action_pressed("ability"):
+	if event.is_action_pressed("ability"):
 		try_bomb(get_global_mouse_position())
-
-
-func is_dashing() -> bool:
-	return _dash_time > 0.0
-
-
-## The velocity Player.gd should use this frame while a dash is on.
-func dash_velocity() -> Vector2:
-	return _dash_dir * (Items.DASH_DISTANCE_PX / Items.DASH_SECONDS)
-
-
-## Shadow Step: along the move input, or the aim if standing still.
-func try_dash() -> bool:
-	if not has("shadow_step") or _dash_cd > 0.0 or is_dashing():
-		return false
-	var dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	if dir == Vector2.ZERO:
-		dir = player.aim_direction
-	_dash_dir = dir.normalized()
-	_dash_time = Items.DASH_SECONDS
-	_dash_cd = Items.DASH_COOLDOWN_SECONDS
-	player.grant_mercy(Items.DASH_INVULNERABLE_SECONDS)
-	return true
 
 
 ## Blot Bomb: thrown at `target`, at most BOMB_THROW_MAX_PX away.
@@ -183,18 +153,9 @@ func try_bomb(target: Vector2) -> bool:
 
 
 func _physics_process(delta: float) -> void:
-	if _dash_cd > 0.0:
-		_dash_cd = maxf(0.0, _dash_cd - delta)
-		cooldown_changed.emit("shadow_step", _dash_cd, Items.DASH_COOLDOWN_SECONDS)
 	if _bomb_cd > 0.0:
 		_bomb_cd = maxf(0.0, _bomb_cd - delta)
 		cooldown_changed.emit("blot_bomb", _bomb_cd, Items.BOMB_COOLDOWN_SECONDS)
-	if _dash_time > 0.0:
-		_dash_time -= delta
-		_afterimage_t -= delta
-		if _afterimage_t <= 0.0:
-			_afterimage_t = 0.03
-			_afterimage()
 	if not _wards.is_empty():
 		_ward_angle += Items.WARD_SPIN_RAD_PER_S * delta
 		for i in _wards.size():
@@ -217,25 +178,6 @@ func _spawn_familiar() -> void:
 	f.set("owner_player", player)
 	get_tree().current_scene.add_child.call_deferred(f)
 	f.set_deferred("global_position", player.global_position + Vector2(-30, -20))
-
-
-## A fading copy of the knight's current frame, behind him.
-func _afterimage() -> void:
-	var src := player.sprite
-	if src == null or src.sprite_frames == null:
-		return
-	var ghost := Sprite2D.new()
-	ghost.texture = src.sprite_frames.get_frame_texture(src.animation, src.frame)
-	ghost.flip_h = src.flip_h
-	ghost.offset = src.offset
-	ghost.global_position = src.global_position
-	ghost.scale = src.global_scale
-	ghost.modulate = Color(Palette.NIB_TEAL, 0.45)
-	ghost.z_index = 3
-	get_tree().current_scene.add_child(ghost)
-	var t := ghost.create_tween()
-	t.tween_property(ghost, "modulate:a", 0.0, 0.22)
-	t.tween_callback(ghost.queue_free)
 
 
 func _play_ring(colour: Color, radius: float) -> void:

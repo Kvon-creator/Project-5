@@ -196,6 +196,9 @@ func _ready() -> void:
 	agent.radius = _hitbox_radius()
 	_apply_species_frames()
 	_apply_facing(facing)
+	# Bullets hit a rectangle around the sprite; $Hitbox stays the small
+	# circle at the feet that walks into walls and onto traps.
+	SpriteHitbox.attach(self, sprite, SpriteHitbox.ENEMY_LAYER)
 	hp_changed.emit(hp, max_hp)
 
 

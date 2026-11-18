@@ -8,6 +8,32 @@ Read this before you start on your mechanic.
 
 ---
 
+## Update, 17 Nov (later): sprite hitboxes and the dodge (not in the GDD)
+
+**Hitboxes.** Bullets no longer hit the small circle at a character's
+feet. `SpriteHitbox.gd` puts an Area2D rectangle around the visible pixels
+of the character's current sprite frame, every frame, so it fits each
+species and follows flips and bobbing. Player.gd crops the knight's to his
+body: the staff, right of his hand, cannot be hit. The feet circle is still
+the body that meets walls, cover and traps. Bullets look for the new boxes
+on two new layers, `player_hitbox` (9) and `enemy_hitbox` (10). The
+GrazeArea is now the knight's box plus the GDD's 20 px band. Expect the
+game to be harder than with the old 8 px hitbox.
+
+**Dodge.** `Dodge.gd`, on SPACE, always available: 110 px, 0.3 s
+i-frames, 0.8 s cooldown. During the i-frames `Player.is_phasing()` is true:
+`take_damage` does nothing, and EnemyBullet passes through instead of
+breaking, so the GrazeMeter's own enter/exit rule pays a graze for it.
+A bullet still inside the knight when the i-frames end hits him. Shadow
+Step is now the dodge's upgrade, not a separate dash. `tests/DodgeTest.tscn`
+has 27 checks.
+
+**Touches to owned scripts.** Player.gd (Daryl) builds the Dodge and the
+hitbox and has `is_phasing()`; EnemyBullet.gd (Jarman) and PlayerBullet.gd
+(Daryl) hit hitboxes instead of bodies (`EnemyBullet._on_body_entered`
+still accepts a Player, so `tests/MechanicsTest` is unchanged apart from a
+comment); Enemy.gd (Jarman) attaches its hitbox.
+
 ## Update, 17 Nov: equipment and power-up drops (not in the GDD)
 
 Fourteen drops on top of the GDD's six mechanics: extra lives, a heal, four

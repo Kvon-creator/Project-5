@@ -19,7 +19,8 @@ extends RefCounted
 ## chain lightning on hit is Zeus's attack boons in Hades; the dash with
 ## invulnerability is Enter the Gungeon's dodge roll and Hades' dash; the
 ## orbiting bullet blockers and the shooting familiar are Isaac's orbitals and
-## familiars; the extra life is Gungeon's Clone and Isaac's 1-ups.
+## familiars; the extra life is Gungeon's Clone and Isaac's 1-ups. The base
+## dodge itself (Dodge.gd, SPACE) is always there; Shadow Step upgrades it.
 
 enum Kind { LIFE, CONSUMABLE, ABILITY, ATTACK }
 
@@ -39,7 +40,7 @@ const ALL := {
 	},
 	"shadow_step": {
 		"name": "Shadow Step", "kind": Kind.ABILITY, "weight": 4, "unique": true,
-		"blurb": "SPACE: dash through danger, untouchable mid-step.",
+		"blurb": "Your dodge goes further, recovers faster, protects longer.",
 	},
 	"warding_pages": {
 		"name": "Warding Pages", "kind": Kind.ABILITY, "weight": 4, "unique": true,
@@ -100,11 +101,11 @@ const REVIVE_CLEAR_RADIUS_PX: float = 150.0   # same as the Shockwave
 ## Healing
 const HEART_HEAL: int = 25
 
-## Shadow Step (dash)
-const DASH_DISTANCE_PX: float = 150.0
-const DASH_SECONDS: float = 0.16
-const DASH_INVULNERABLE_SECONDS: float = 0.28   # the dash plus a little after
-const DASH_COOLDOWN_SECONDS: float = 0.9
+## Shadow Step: the upgraded dodge (the base numbers are in Dodge.gd)
+const SHADOW_STEP_DISTANCE_PX: float = 160.0
+const SHADOW_STEP_SECONDS: float = 0.20
+const SHADOW_STEP_IFRAMES: float = 0.36
+const SHADOW_STEP_COOLDOWN: float = 0.5
 
 ## Warding Pages
 const WARD_COUNT: int = 2

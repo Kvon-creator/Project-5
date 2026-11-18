@@ -38,8 +38,18 @@ Open `project.godot` in **Godot 4.4 or newer** (tested on 4.7.2).
 
 WASD to move, mouse to aim, hold left-click to fire, Q for the Shockwave
 once the graze meter is full. Clear the waves, walk up to a door, repeat;
-room 7 is the Elite Court, room 8 is the Ink Scribe. SPACE dashes and E
-throws a bomb once you have found those abilities.
+room 7 is the Elite Court, room 8 is the Ink Scribe. SPACE dodges (see
+below); E throws a bomb once you have found it.
+
+**Dodge and hitboxes** *(not in the GDD; proposed numbers in
+`scripts/Dodge.gd`)*. SPACE dodges 110 px along your movement (or your aim
+when standing still), with 0.3 s of i-frames and a 0.8 s cooldown. While the
+i-frames last, nothing hurts you and enemy shots pass straight through you,
+so a shot you dodge through counts as a graze (+5) once it leaves your
+graze band; a shot still inside you when the i-frames end hits you then.
+Bullets hit an invisible rectangle around each character's visible sprite
+(`scripts/SpriteHitbox.gd`); the knight's leaves out his staff. Walls, cover
+and traps still meet the small circle at each character's feet.
 
 **Items** *(not in the GDD; every number in `scripts/Items.gd` is proposed)*.
 Each cleared room offers two items; walk over one and the other crumbles.
@@ -51,7 +61,7 @@ unchanged and comes on top.
 |---|---|---|
 | Phoenix Seal | life | +1 life (max 3): falling revives you at 50 HP, clears nearby shots |
 | Heart of Ink | heal | +25 HP |
-| Shadow Step | ability | SPACE: 150 px dash, untouchable mid-step, 0.9 s cooldown |
+| Shadow Step | ability | upgrades the dodge: 160 px, 0.36 s i-frames, 0.5 s cooldown |
 | Blot Bomb | ability | E: ink bomb at the cursor, 35 damage in 90 px, sets off barrels, 7 s cooldown |
 | Warding Pages | ability | two orbiting pages eat enemy shots, then rest 1.2 s |
 | Inkling | ability | an imp familiar that shoots the nearest foe (5 damage) |
@@ -90,6 +100,7 @@ godot --headless --path . --quit-after 150         # must print no errors
 godot --headless --path . res://tests/MechanicsTest.tscn      # grazing + Shockwave (Daryl)
 godot --headless --path . res://tests/KvonMechanicsTest.tscn  # rooms + environment (K'von)
 godot --headless --path . res://tests/ItemsTest.tscn       # item checks
+godot --headless --path . res://tests/DodgeTest.tscn       # dodge, i-frames, hitboxes
 godot --path . res://tests/Screenshot.tscn         # saves build/shots/*.png
 ```
 

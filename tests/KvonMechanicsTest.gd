@@ -456,7 +456,10 @@ func _environment_checks() -> void:
 
 	# ---- cover ----
 	_clear_stage()
-	_player.global_position = c + far
+	# The knight's hitbox is his whole sprite, which stands about 80 px tall
+	# above his feet, so he stands far enough back that all of him is behind
+	# the cover.
+	_player.global_position = c + Vector2(0, 220)
 	var wall := _spawn_object(1, c + Vector2(0, 100))    # between the bullet and the knight
 	await _frames(2)
 	hp_before = _player.hp

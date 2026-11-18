@@ -23,6 +23,9 @@ const DAMAGE: int = 10
 ## graze window is a real decision rather than a reflex, which is the whole
 ## point of Daryl's mechanic.
 const SPEED_PX_PER_SECOND: float = 260.0
+## Layers 5 (env_object) and 6 (wall).
+const COVER_AND_WALLS: int = 16 | 32
+
 ## PREVIEW(Jarman): a bullet that misses everything still has to go away.
 const LIFETIME_SECONDS: float = 4.0
 
@@ -62,24 +65,73 @@ func _ready() -> void:
 	# enemy bullet leaves here Hostile Magenta.
 	sprite.modulate = Palette.ENEMY_BULLET
 	z_index = 4
+	# Hits the player's SpriteHitbox (the rectangle around the knight's
+	# sprite), plus cover and walls as bodies. Not the player's body: that is
+	# only the small circle at his feet.
+	collision_mask = COVER_AND_WALLS | SpriteHitbox.PLAYER_LAYER
+	area_entered.connect(_on_area_entered)
+	area_exited.connect(_on_area_exited)
 	get_tree().create_timer(LIFETIME_SECONDS).timeout.connect(queue_free)
 
 
 func _physics_process(delta: float) -> void:
+	# Passing through a dodging knight: if his i-frames run out while this
+	# bullet is still inside him, it hits him now.
+	if _inside != null and is_instance_valid(_inside) and not _inside.is_phasing():
+		_hit_player(_inside)
+		return
 	# Built: bullets fly. This is visual, not mechanical - the patterns that
 	# decide WHERE they fly are the enemy's job.
 	global_position += direction * SPEED_PX_PER_SECOND * delta
 
 
+var _spent: bool = false
+## The knight, while this bullet is passing through him mid-dodge.
+var _inside: Player = null
+
+
+## Cover and walls. (The player's body is no longer on this bullet's mask,
+## but a Player passed in directly still counts as a hit, so callers and
+## tests that simulate a hit this way keep working.)
 func _on_body_entered(body: Node2D) -> void:
+	if _spent:
+		return
 	if body is Player:
-		hit_player.emit(DAMAGE)
-		# PREVIEW(Jarman). Player.take_damage already handles the -25 meter
-		# penalty via its took_damage signal.
-		(body as Player).take_damage(DAMAGE)
-	elif body is EnvObject:
+		_hit_player(body as Player)
+		return
+	_spent = true
+	if body is EnvObject:
 		# GDD: cover "breaks after 5 hits from any source".
 		(body as EnvObject).take_hit("enemy")
+	queue_free()
+
+
+## The player's hitbox. During a dodge's i-frames the bullet passes through
+## him instead (Dodge.gd), and stays live so the graze band can still pay
+## out for it when it leaves.
+func _on_area_entered(area: Area2D) -> void:
+	if not (area is SpriteHitbox) or not ((area as SpriteHitbox).body is Player):
+		return
+	var player := (area as SpriteHitbox).body as Player
+	if player.is_phasing():
+		_inside = player
+		return
+	_hit_player(player)
+
+
+func _on_area_exited(area: Area2D) -> void:
+	if area is SpriteHitbox and (area as SpriteHitbox).body == _inside:
+		_inside = null
+
+
+func _hit_player(player: Player) -> void:
+	if _spent:
+		return
+	_spent = true
+	hit_player.emit(DAMAGE)
+	# PREVIEW(Jarman). Player.take_damage already handles the -25 meter
+	# penalty via its took_damage signal.
+	player.take_damage(DAMAGE)
 	queue_free()
 
 

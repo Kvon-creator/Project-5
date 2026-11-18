@@ -51,7 +51,11 @@ func _ready() -> void:
 		sprite.modulate = Palette.PLAYER_SHOT.lerp(Palette.EMBER, 0.6)
 	scale = Vector2.ONE * size_scale
 	z_index = 4
+	# Hits enemies' SpriteHitboxes (the rectangle around each sprite), plus
+	# cover and walls as bodies.
+	collision_mask = 16 | WALL_MASK | SpriteHitbox.ENEMY_LAYER
 	body_entered.connect(_on_body_entered)
+	area_entered.connect(_on_area_entered)
 	# A bouncing shot has further to go.
 	_life = LIFETIME_SECONDS * (1.0 + 0.5 * bounces)
 
@@ -85,20 +89,28 @@ func _physics_process(delta: float) -> void:
 	global_position += step
 
 
-func _on_body_entered(body: Node2D) -> void:
-	if _spent:
+## An enemy's hitbox.
+func _on_area_entered(area: Area2D) -> void:
+	if _spent or not (area is SpriteHitbox) or not ((area as SpriteHitbox).body is Enemy):
 		return
-	if body is Enemy:
-		var e := body as Enemy
-		var id := e.get_instance_id()
-		if _hit.has(id):
-			return
-		_hit[id] = true
-		_strike(e)
-		if pierce > 0:
-			pierce -= 1
-			return
-	elif body is EnvObject:
+	var e := (area as SpriteHitbox).body as Enemy
+	var id := e.get_instance_id()
+	if _hit.has(id):
+		return
+	_hit[id] = true
+	_strike(e)
+	if pierce > 0:
+		pierce -= 1
+		return
+	_spent = true
+	queue_free()
+
+
+## Cover, barrels and walls.
+func _on_body_entered(body: Node2D) -> void:
+	if _spent or body is Enemy:
+		return
+	if body is EnvObject:
 		(body as EnvObject).take_hit("player")
 	elif bounces > 0:
 		return   # the ray in _physics_process handles the bounce
