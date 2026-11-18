@@ -55,7 +55,7 @@ for abilities, hexagon for attack changes.
 ## Update, 13 Nov: K'von's mechanics, per the GDD (branch `kvon-mechanics`)
 
 The `PREVIEW(K'von)` fills in `EnvObject.gd`, `RoomManager.gd` and
-`GameManager.gd` are replaced with the full rules. `tests/MechanicsTest.tscn`
+`GameManager.gd` are replaced with the full rules. `tests/KvonMechanicsTest.tscn`
 checks each one against the GDD number.
 
 **Environmental Combat** (`EnvObject.gd`)

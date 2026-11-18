@@ -87,12 +87,13 @@ Before pushing, run the checks that were run on every commit of this preview:
 ```bash
 python3 pipeline/check_gdscript.py                 # static GDScript check
 godot --headless --path . --quit-after 150         # must print no errors
-godot --headless --path . res://tests/MechanicsTest.tscn   # GDD rule checks
+godot --headless --path . res://tests/MechanicsTest.tscn      # grazing + Shockwave (Daryl)
+godot --headless --path . res://tests/KvonMechanicsTest.tscn  # rooms + environment (K'von)
 godot --headless --path . res://tests/ItemsTest.tscn       # item checks
 godot --path . res://tests/Screenshot.tscn         # saves build/shots/*.png
 ```
 
-`MechanicsTest` plays a whole 8-room run and then sets up each barrel, cover
+`KvonMechanicsTest` plays a whole 8-room run and then sets up each barrel, cover
 and trap case, printing PASS or FAIL per GDD rule for Environmental Combat
 and Room-Based Combat; it exits non-zero if any rule fails.
 

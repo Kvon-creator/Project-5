@@ -12,7 +12,7 @@ extends Node
 ## The GDD's own drop - Combat Rewards' damage shell every 5th kill - is
 ## separate and unchanged. These come on top of it.
 
-## Off: nothing drops. tests/MechanicsTest turns it off so it checks the
+## Off: nothing drops. tests/KvonMechanicsTest turns it off so it checks the
 ## GDD's rules alone.
 var enabled: bool = true
 
